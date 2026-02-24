@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables (contains API keys)
+.env
+.env.local
+.env.*.local
+
+# Sensitive documents (contains API keys, internal notes)
+task.MD
+error.MD
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Project specific
+artifacts/
+data/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python (old project - keep for reference but don't commit Python cache)
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+
+# Docker volumes
+docker volumes/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp

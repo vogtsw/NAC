@@ -1,0 +1,44 @@
+"""
+沙箱容器 Dockerfile
+
+提供隔离的代码执行环境
+"""
+
+FROM python:3.11-slim as base
+
+# 设置工作目录
+WORKDIR /workspace
+
+# 安装基础工具
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    git \
+    curl \
+    wget \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装常用 Python 包
+RUN pip3 install --no-cache-dir \
+    requests \
+    httpx \
+    pandas \
+    numpy
+
+# 创建受限用户
+RUN useradd --create-home --shell /bin/bash worker
+RUN mkdir -p /workspace && chown -R worker:worker /workspace
+
+USER worker
+
+# 复制依赖文件（如果有）
+# COPY --chown=worker:worker requirements.txt .
+# RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 设置路径
+ENV PATH="/usr/local/bin:$PATH"
+ENV PYTHONPATH="/workspace:$PYTHONPATH"
+
+# 默认命令
+CMD ["/bin/bash"]
