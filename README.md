@@ -1,101 +1,317 @@
-# NexusAgent-Cluster
+# NexusAgent-Cluster (NAC)
 
-通用多智能体任务编排系统
+**Multi-Agent Orchestration System** - A TypeScript/Node.js based distributed agent cluster for intelligent task automation.
 
-## 项目概述
+## Overview
 
-NexusAgent-Cluster (NAC) 是一个通用的、可扩展的多智能体任务编排系统。系统根据用户输入的任务意图，自动生成、调度和管理多个专业化的子智能体，通过并行协作完成复杂任务。
+NexusAgent-Cluster (NAC) is an extensible multi-agent orchestration system that automatically generates, schedules, and manages specialized sub-agents to complete complex tasks through parallel collaboration.
 
-### 核心特性
+### Core Features
 
-- **Intent-to-Action**：将自然语言意图转化为可执行的任务序列
-- **动态代理生成**：根据任务需求动态生成具有特定角色的子智能体
-- **Skills 系统**：可扩展的技能和能力管理
-- **启发式并行编排**：基于 DAG 调度算法，自动识别可并行任务
-- **全能力覆盖**：支持终端、文件、浏览器、计算机交互等多种操作能力
+| Feature | Description |
+|---------|-------------|
+| **Intent-to-Action** | Converts natural language intent into executable task sequences using LLM |
+| **Dynamic Agent Generation** | Creates specialized agents on-demand based on task requirements |
+| **DAG-Based Scheduling** | Identifies parallelizable tasks using Directed Acyclic Graph algorithms |
+| **Skills System** | Modular, pluggable capabilities that agents can dynamically load |
+| **Multi-LLM Support** | Works with Zhipu AI, DeepSeek, OpenAI, Qwen, and more |
+| **Event-Driven Architecture** | Real-time event broadcasting with in-memory and Redis-based EventBus |
+| **RESTful API** | Fastify-based high-performance HTTP server |
+| **Type-Safe** | Built with TypeScript 5+ for full type safety |
 
-### 支持的任务类型
+### Supported Task Types
 
-- 代码开发
-- 数据分析
-- 自动化运维
-- 浏览器自动化
-- 文件处理
-- 系统管理
+- **Code Development** - Generate, review, and refactor code
+- **Data Analysis** - Process and analyze datasets
+- **Automation** - Terminal commands and file operations
+- **Analysis** - Code review and data insights
+- **Deployment** - Build and deployment workflows
 
-## 快速开始
+## Tech Stack
 
-### 环境要求
+```yaml
+Runtime:
+  - Node.js 20+
+  - TypeScript 5+
 
-- Python >= 3.11
-- Docker & Docker Compose
-- Redis
-- PostgreSQL
+Package Manager:
+  - pnpm
 
-### 安装
+API Framework:
+  - Fastify (high-performance HTTP)
+  - WebSocket support
 
-```bash
-# 使用 uv 安装依赖
-uv sync
+State Management:
+  - Redis 7+ (optional, for distributed state)
+  - In-memory fallback
 
-# 或使用 pip
-pip install -e .
+LLM Integration:
+  - OpenAI SDK (compatible with multiple providers)
+
+Testing:
+  - Vitest (unit testing)
+  - tsx (test runner)
+
+Build Tools:
+  - tsup / esbuild
 ```
 
-### 配置
+## Quick Start
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm (recommended) or npm
+- Redis 7+ (optional, for distributed features)
+
+### Installation
 
 ```bash
-# 复制环境变量模板
+# Clone the repository
+git clone https://github.com/vogtsw/NAC.git
+cd NAC
+
+# Install dependencies
+pnpm install
+
+# Copy environment template
 cp .env.example .env
-
-# 编辑 .env 文件，填入你的 API Keys
 ```
 
-### 运行
+### Configuration
+
+Edit `.env` file with your LLM provider credentials:
 
 ```bash
-# 启动开发环境
-docker-compose -f docker/docker-compose.yml up -d
+# Choose your LLM provider
+LLM_PROVIDER=zhipu
 
-# 运行 CLI
-python -m nexus "分析当前目录的文件"
+# Zhipu AI (智谱)
+ZHIPU_API_KEY=your_api_key_here
+ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+ZHIPU_MODEL=glm-4-flash
 
-# 启动 API 服务
-uvicorn nexus.api.main:app --reload
+# DeepSeek
+# DEEPSEEK_API_KEY=your_api_key_here
+# DEEPSEEK_BASE_URL=https://api.deepseek.com
+# DEEPSEEK_MODEL=deepseek-chat
+
+# OpenAI
+# OPENAI_API_KEY=your_api_key_here
+# OPENAI_BASE_URL=https://api.openai.com/v1
+# OPENAI_MODEL=gpt-4o
+
+# Qwen (阿里云)
+# QWEN_API_KEY=your_api_key_here
+# QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+# QWEN_MODEL=qwen-max
 ```
 
-## 项目结构
+### Running
+
+```bash
+# Run CLI interface
+pnpm cli run "Create a user login RESTful API"
+
+# Start API server
+pnpm start
+
+# Development mode with hot reload
+pnpm dev
+
+# Run tests
+pnpm test
+
+# Run integration tests
+pnpm test:integration
+```
+
+## Project Structure
 
 ```
 nexus-agent-cluster/
-├── nexus/                # 源代码
-│   ├── orchestrator/     # 核心编排者
-│   ├── agents/           # 子代理系统
-│   ├── skills/           # Skills 系统
-│   ├── tools/            # MCP 工具集成
-│   ├── sandbox/          # 沙箱管理
-│   ├── state/            # 共享状态管理
-│   ├── api/              # API 层
-│   └── monitoring/       # 监控
-├── skills/               # Skills 定义
-├── tests/                # 测试
-└── docker/               # Docker 配置
+├── src/
+│   ├── agents/                # Agent System
+│   │   ├── BaseAgent.ts       # Abstract base class
+│   │   ├── GenericAgent.ts    # General-purpose agent
+│   │   ├── CodeAgent.ts       # Code development agent
+│   │   ├── DataAgent.ts       # Data analysis agent
+│   │   ├── AutomationAgent.ts # Automation agent
+│   │   ├── AnalysisAgent.ts   # Analysis agent
+│   │   ├── AgentFactory.ts    # Dynamic agent creation
+│   │   └── index.ts
+│   ├── orchestrator/          # Core Orchestration
+│   │   ├── Orchestrator.ts    # Main coordinator
+│   │   ├── IntentParser.ts    # Natural language parser
+│   │   ├── DAGBuilder.ts      # Task dependency graph
+│   │   └── Scheduler.ts       # Parallel task executor
+│   ├── skills/                # Skills System
+│   │   ├── SkillManager.ts    # Skill registry
+│   │   ├── types.ts           # Type definitions
+│   │   └── builtin/           # Built-in skills
+│   │       ├── CodeGenerationSkill.ts
+│   │       ├── CodeReviewSkill.ts
+│   │       ├── DataAnalysisSkill.ts
+│   │       ├── FileOpsSkill.ts
+│   │       └── TerminalSkill.ts
+│   ├── llm/                   # LLM Abstraction
+│   │   ├── LLMClient.ts       # Universal LLM client
+│   │   └── prompts.ts         # Prompt templates
+│   ├── state/                 # State Management
+│   │   ├── Blackboard.ts      # Shared state (Redis)
+│   │   ├── EventBus.ts        # Event pub/sub
+│   │   └── models.ts          # Data models
+│   ├── api/                   # API Layer
+│   │   ├── server.ts          # Fastify server
+│   │   └── routes/            # HTTP routes
+│   ├── monitoring/            # Logging & Metrics
+│   ├── config/                # Configuration
+│   └── cli.ts                 # CLI interface
+├── scripts/                   # Test Scripts
+│   ├── test-zhipu.ts         # Zhipu API tests
+│   ├── test-deepseek.ts      # DeepSeek API tests
+│   └── test-integration.ts   # Integration tests
+├── tests/                     # Tests
+├── package.json
+├── tsconfig.json
+├── vitest.config.ts
+└── README.md
 ```
 
-## 开发
+## API Endpoints
+
+### Task Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/tasks/submit` | POST | Submit a new task |
+| `/api/v1/tasks/:id` | GET | Get task details |
+| `/api/v1/tasks/session/:id/tasks` | GET | Get session tasks |
+| `/api/v1/tasks/:id/cancel` | DELETE | Cancel a task |
+
+### Agent Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/agents/` | GET | List all agents |
+| `/api/v1/agents/:id` | GET | Get agent details |
+| `/api/v1/agents/stats` | GET | Get statistics |
+| `/api/v1/agents/types` | GET | List agent types |
+
+### Skills
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/skills/` | GET | List all skills |
+| `/api/v1/skills/:id` | GET | Get skill details |
+| `/api/v1/skills/execute` | POST | Execute a skill |
+
+### Health
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+
+## CLI Usage
 
 ```bash
-# 运行测试
-pytest
+# Execute a task
+pnpm cli run "Generate a TypeScript function to calculate Fibonacci numbers"
 
-# 代码格式化
-ruff format nexus/
-ruff check nexus/
-
-# 类型检查
-mypy nexus/
+# Show help
+pnpm cli --help
 ```
 
-## 许可证
+## Development
 
-MIT License
+### Code Quality
+
+```bash
+# Type checking
+pnpm check
+
+# Build
+pnpm build
+
+# Run linter
+pnpm lint
+```
+
+### Testing
+
+```bash
+# Unit tests
+pnpm test
+
+# Integration tests
+pnpm test:integration
+
+# Test coverage
+pnpm test:coverage
+```
+
+## Architecture
+
+### Request Flow
+
+```
+User Input
+    ↓
+Intent Parser (LLM)
+    ↓
+DAG Builder (Task Planning)
+    ↓
+Scheduler (Parallel Execution)
+    ↓
+Agent Factory (Create Agents)
+    ↓
+Skills Execution
+    ↓
+Result Aggregation
+```
+
+### Event Flow
+
+```
+Event Publisher
+    ↓
+Event Bus (Redis/Memory)
+    ↓
+Subscribers (Agents, Monitors)
+    ↓
+Real-time Updates (WebSocket)
+```
+
+## Configuration
+
+See `.env.example` for all available configuration options.
+
+```bash
+# Cluster
+MAX_PARALLEL_AGENTS=10
+TASK_TIMEOUT=300000
+
+# Orchestrator
+ENABLE_DAG_OPTIMIZATION=true
+MAX_TASK_RETRIES=3
+
+# API
+API_HOST=0.0.0.0
+API_PORT=3000
+
+# Monitoring
+LOG_LEVEL=info
+ENABLE_METRICS=true
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+**Built with ❤️ using TypeScript + Node.js**
