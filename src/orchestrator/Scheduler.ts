@@ -12,6 +12,17 @@ import { getLogger } from '../monitoring/logger.js';
 
 const logger = getLogger('Scheduler');
 
+/**
+ * 修复 Unicode 转义字符（用于显示中文）
+ */
+export function fixUnicodeDisplay(text: string): string {
+  if (!text) return text;
+  // 解码 Unicode 转义 \uXXXX
+  return text.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+}
+
 export interface SchedulerContext {
   agentFactory: AgentFactory;
 }
@@ -65,7 +76,7 @@ export class Scheduler {
     }
 
     logger.info({ sessionId, totalResults: results.size }, 'DAG schedule completed');
-    return Object.fromEntries(results);
+    return Object.fromEntries(results.entries());
   }
 
   /**
@@ -80,41 +91,49 @@ export class Scheduler {
     const blackboard = getBlackboard();
     const eventBus = getEventBus();
 
-    logger.info({ taskId, taskName: task.name }, 'Starting task');
+    logger.info({ taskId, taskName: fixUnicodeDisplay(task.name) }, 'Starting task');
 
-    try {
-      // Update task status
-      await blackboard.updateTaskStatus(sessionId, taskId, 'running');
-      await eventBus.publish(EventType.TASK_UPDATED, { sessionId, taskId, status: 'running' });
+    // Create execution promise and track it
+    const executionPromise = (async () => {
+      try {
+        // Update task status
+        await blackboard.updateTaskStatus(sessionId, taskId, 'running');
+        await eventBus.publish(EventType.TASK_UPDATED, { sessionId, taskId, status: 'running' });
 
-      // Create agent
-      const agent = await context.agentFactory.create(task.agentType, {
-        taskId,
-        skills: task.requiredSkills,
-      });
+        // Create agent
+        const agent = await context.agentFactory.create(task.agentType, {
+          taskId,
+          skills: task.requiredSkills,
+        });
 
-      // Execute task
-      const startTime = Date.now();
-      const result = await agent.execute(task);
-      const duration = Date.now() - startTime;
+        // Execute task
+        const startTime = Date.now();
+        const result = await agent.execute(task);
+        const duration = Date.now() - startTime;
 
-      // Record result
-      await blackboard.recordTaskResult(sessionId, taskId, result);
-      await eventBus.publish(EventType.TASK_COMPLETED, { sessionId, taskId, result, duration });
+        // Record result
+        await blackboard.recordTaskResult(sessionId, taskId, result);
+        await eventBus.publish(EventType.TASK_COMPLETED, { sessionId, taskId, result, duration });
 
-      logger.info({ taskId, duration }, 'Task completed');
+        logger.info({ taskId, duration }, 'Task completed');
 
-      return { taskId, result, duration };
-    } catch (error: any) {
-      logger.error({ taskId, error: error.message }, 'Task failed');
+        return { taskId, result, duration };
+      } catch (error: any) {
+        logger.error({ taskId, error: error.message }, 'Task failed');
 
-      await blackboard.updateTaskStatus(sessionId, taskId, 'failed');
-      await eventBus.publish(EventType.TASK_FAILED, { sessionId, taskId, error: error.message });
+        await blackboard.updateTaskStatus(sessionId, taskId, 'failed');
+        await eventBus.publish(EventType.TASK_FAILED, { sessionId, taskId, error: error.message });
 
-      throw error;
-    } finally {
-      this.runningTasks.delete(taskId);
-    }
+        throw error;
+      } finally {
+        this.runningTasks.delete(taskId);
+      }
+    })();
+
+    // Track the running task
+    this.runningTasks.set(taskId, executionPromise);
+
+    return await executionPromise;
   }
 
   /**

@@ -1,0 +1,9 @@
+{
+  "name": "example-package",
+  "version": "1.0.0",
+  "description": "Example skill package demonstrating multi-skill packages",
+  "author": "NexusAgent Team",
+  "main": "index.ts",
+  "skills": ["TextProcessingSkill", "EmailSkill"],
+  "permissions": ["network", "file-read"]
+}

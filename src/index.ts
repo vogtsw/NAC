@@ -1,26 +1,12 @@
 /**
  * Main Entry Point
- * Start the API server
+ * NexusAgent-Cluster - Multi-Agent Orchestration System
  */
 
-import 'dotenv/config';
-import { startServer } from './api/server.js';
-import { getLogger } from './monitoring/logger.js';
-
-const logger = getLogger('index');
-
-async function main() {
-  logger.info('Starting NexusAgent-Cluster...');
-
-  try {
-    await startServer();
-  } catch (error: any) {
-    logger.error({ error: error.message }, 'Failed to start server');
-    process.exit(1);
-  }
-}
-
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+export * from './orchestrator/Orchestrator.js';
+export * from './orchestrator/DAGBuilder.js';
+export * from './orchestrator/Scheduler.js';
+export * from './agents/AgentFactory.js';
+export * from './skills/SkillManager.js';
+export * from './state/Blackboard.js';
+export * from './llm/LLMClient.js';

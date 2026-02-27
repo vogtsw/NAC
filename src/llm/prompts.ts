@@ -33,21 +33,27 @@ export const TaskPlanningPrompt = {
     primaryGoal: string;
     capabilities: string;
     complexity: string;
-  }) => `你是一个任务规划专家。基于用户意图，制定详细的执行计划。
+    availableSkills?: string[];
+  }) => {
+    const skillsSection = params.availableSkills && params.availableSkills.length > 0
+      ? `\n可用技能列表：${params.availableSkills.join(', ')}\n注意：required_skills 必须从上述可用技能列表中选择！`
+      : '';
+
+    return `你是一个任务规划专家。基于用户意图，制定详细的执行计划。
 
 用户意图：${params.intent}
 主要目标：${params.primaryGoal}
 所需能力：${params.capabilities}
-复杂度：${params.complexity}
+复杂度：${params.complexity}${skillsSection}
 
-请制定详细的执行计划，返回JSON格式：
+请制定详细的执行计划，返回JSON格式（注意：所有中文字符必须直接输出，不要使用Unicode转义）：
 {
   "steps": [
     {
       "id": "step_1",
-      "name": "步骤名称",
-      "description": "详细描述",
-      "agent_type": "所需Agent类型",
+      "name": "步骤名称（使用中文）",
+      "description": "详细描述（使用中文）",
+      "agent_type": "GenericAgent|CodeAgent|DataAgent|AnalysisAgent|AutomationAgent",
       "required_skills": ["skill1", "skill2"],
       "dependencies": [],
       "estimated_duration": 300
@@ -55,7 +61,15 @@ export const TaskPlanningPrompt = {
   ],
   "parallelizable_groups": [[1, 2], [3, 4]],
   "critical_path": [1, 3, 5]
-}`,
+}
+
+重要提示：
+1. agent_type 必须是以下之一：GenericAgent, CodeAgent, DataAgent, AnalysisAgent, AutomationAgent
+2. required_skills 必须从可用技能列表中选择，如果可用技能为空则使用空数组 []
+3. dependencies 表示任务依赖的步骤ID，如 ["step_1"] 表示依赖 step_1
+4. 估计时长以秒为单位
+5. 所有中文文本必须直接输出，不要使用 \\u 转义格式`;
+  },
 };
 
 export const CodeReviewPrompt = {

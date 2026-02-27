@@ -12,6 +12,7 @@ import { AnalysisAgent } from './AnalysisAgent.js';
 import { AgentConfig, AgentInfo, AgentStatus } from '../state/models.js';
 import { SkillManager, getSkillManager } from '../skills/SkillManager.js';
 import { getLogger } from '../monitoring/logger.js';
+import { LLMClient } from '../llm/LLMClient.js';
 
 const logger = getLogger('AgentFactory');
 
@@ -33,7 +34,7 @@ export class AgentFactory {
   private activeAgents: Map<string, BaseAgent> = new Map();
   private skillManager: SkillManager;
 
-  constructor(llm: any) {
+  constructor(private llm: LLMClient) {
     this.skillManager = getSkillManager();
     logger.info('AgentFactory created');
   }
@@ -46,9 +47,8 @@ export class AgentFactory {
 
     const AgentClass = AGENT_REGISTRY[agentType] || GenericAgent;
 
-    // Create a simple wrapper for the llm parameter
-    const llmWrapper = { complete: async () => '' };
-    const agent = new AgentClass(llmWrapper, this.skillManager);
+    // Create agent with the actual LLM client
+    const agent = new AgentClass(this.llm, this.skillManager);
 
     this.activeAgents.set(config.taskId, agent);
 
@@ -105,8 +105,8 @@ export class AgentFactory {
   /**
    * Clean up idle agents
    */
-  async cleanupIdleAgents(timeout: number = 300000): Promise<number> {
-    const now = Date.now();
+  async cleanupIdleAgents(_timeout: number = 300000): Promise<number> {
+    // const _now = Date.now(); // TODO: Use this to check agent idle time
     let cleaned = 0;
 
     for (const [taskId, agent] of this.activeAgents.entries()) {

@@ -1,11 +1,13 @@
 /**
  * Shared Blackboard
  * Redis-backed distributed state management for agent coordination
+ * Falls back to in-memory mode when Redis is not available
  */
 
 import Redis from 'ioredis';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
+import { EventEmitter } from 'events';
 
 const logger = getLogger('Blackboard');
 
@@ -36,57 +38,104 @@ export interface SessionState {
 }
 
 /**
- * Blackboard - Shared state management using Redis
+ * Blackboard - Shared state management using Redis or in-memory
  */
 export class Blackboard {
-  private redis: Redis;
-  private publisher: Redis;
-  private subscriber: Redis;
+  private redis: Redis | null;
+  private publisher: Redis | null;
+  private subscriber: Redis | null;
+  private memorySessions: Map<string, SessionState>;
+  private memoryEvents: EventEmitter;
+  private useMemory: boolean = false;
 
   constructor(redisUrl: string = 'redis://localhost:6379') {
-    this.redis = new Redis(redisUrl, { retryStrategy: () => 2000 });
-    this.publisher = new Redis(redisUrl, { retryStrategy: () => 2000 });
-    this.subscriber = new Redis(redisUrl, { retryStrategy: () => 2000 });
+    this.memorySessions = new Map();
+    this.memoryEvents = new EventEmitter();
 
-    this.redis.on('error', (err) => logger.error({ error: err }, 'Redis error'));
-    this.publisher.on('error', (err) => logger.error({ error: err }, 'Redis publisher error'));
-    this.subscriber.on('error', (err) => logger.error({ error: err }, 'Redis subscriber error'));
+    this.redis = new Redis(redisUrl, {
+      retryStrategy: (times) => {
+        if (times > 3) {
+          return null;
+        }
+        return 2000;
+      },
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: false,
+    });
+    this.publisher = new Redis(redisUrl, {
+      retryStrategy: (times) => times > 3 ? null : 2000,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: false,
+    });
+    this.subscriber = new Redis(redisUrl, {
+      retryStrategy: (times) => times > 3 ? null : 2000,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: false,
+    });
+
+    this.redis.on('error', (err) => {
+      if (err.message.includes('ECONNREFUSED')) {
+        this.switchToMemoryMode();
+      }
+    });
+    this.publisher.on('error', (err) => {
+      if (err.message.includes('ECONNREFUSED')) {
+        this.switchToMemoryMode();
+      }
+    });
+    this.subscriber.on('error', (err) => {
+      if (err.message.includes('ECONNREFUSED')) {
+        this.switchToMemoryMode();
+      }
+    });
 
     logger.info({ redisUrl }, 'Blackboard initialized');
   }
 
-  /**
-   * Initialize connections
-   */
+  private switchToMemoryMode() {
+    if (this.useMemory) return;
+
+    this.useMemory = true;
+
+    if (this.redis) { this.redis.disconnect(); }
+    if (this.publisher) { this.publisher.disconnect(); }
+    if (this.subscriber) { this.subscriber.disconnect(); }
+
+    this.redis = null;
+    this.publisher = null;
+    this.subscriber = null;
+
+    logger.info('Blackboard switched to in-memory mode');
+  }
+
   async initialize(): Promise<void> {
+    if (this.useMemory) return;
+
     try {
       await Promise.all([
-        this.redis.ping(),
-        this.publisher.ping(),
-        this.subscriber.ping(),
+        this.redis?.ping(),
+        this.publisher?.ping(),
+        this.subscriber?.ping(),
       ]);
       logger.info('Blackboard connections established');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to connect to Redis');
-      throw error;
+    } catch {
+      this.switchToMemoryMode();
     }
   }
 
-  /**
-   * Close connections
-   */
   async close(): Promise<void> {
-    await Promise.all([
-      this.redis.quit(),
-      this.publisher.quit(),
-      this.subscriber.quit(),
-    ]);
+    if (!this.useMemory) {
+      await Promise.all([
+        this.redis?.quit(),
+        this.publisher?.quit(),
+        this.subscriber?.quit(),
+      ]);
+    }
+    this.memorySessions.clear();
+    this.memoryEvents.removeAllListeners();
     logger.info('Blackboard connections closed');
   }
 
-  /**
-   * Create a new session
-   */
   async createSession(sessionId: string, initialState: any = {}): Promise<SessionState> {
     const state: SessionState = {
       sessionId,
@@ -110,21 +159,29 @@ export class Blackboard {
     return state;
   }
 
-  /**
-   * Get session state
-   */
   async getState(sessionId: string): Promise<SessionState | null> {
-    const data = await this.redis.hget('nexus:sessions', sessionId);
+    if (this.useMemory) {
+      return this.memorySessions.get(sessionId) || null;
+    }
+
+    const data = await this.redis?.hget('nexus:sessions', sessionId);
     if (!data) return null;
     return this.parseState(data);
   }
 
-  /**
-   * Get state by task ID
-   */
   async getStateByTask(taskId: string): Promise<SessionState | null> {
-    const sessionIds = await this.redis.hkeys('nexus:sessions');
+    if (this.useMemory) {
+      for (const state of this.memorySessions.values()) {
+        if (state.tasks.has(taskId)) {
+          return state;
+        }
+      }
+      return null;
+    }
 
+    if (!this.redis) return null;
+
+    const sessionIds = await this.redis.hkeys('nexus:sessions');
     for (const sessionId of sessionIds) {
       const data = await this.redis.hget('nexus:sessions', sessionId);
       if (data) {
@@ -138,16 +195,15 @@ export class Blackboard {
     return null;
   }
 
-  /**
-   * Get all session IDs
-   */
   async getAllSessions(): Promise<string[]> {
+    if (this.useMemory) {
+      return Array.from(this.memorySessions.keys());
+    }
+
+    if (!this.redis) return [];
     return await this.redis.hkeys('nexus:sessions');
   }
 
-  /**
-   * Update task status
-   */
   async updateTaskStatus(
     sessionId: string,
     taskId: string,
@@ -173,9 +229,6 @@ export class Blackboard {
     await this.publishEvent('task.updated', { sessionId, taskId, status });
   }
 
-  /**
-   * Record task result
-   */
   async recordTaskResult(
     sessionId: string,
     taskId: string,
@@ -197,22 +250,26 @@ export class Blackboard {
     logger.debug({ sessionId, taskId }, 'Task result recorded');
   }
 
-  /**
-   * Delete session
-   */
   async deleteSession(sessionId: string): Promise<void> {
-    await this.redis.hdel('nexus:sessions', sessionId);
+    if (this.useMemory) {
+      this.memorySessions.delete(sessionId);
+    } else {
+      await this.redis?.hdel('nexus:sessions', sessionId);
+    }
     await this.publishEvent('session.deleted', { sessionId });
     logger.info({ sessionId }, 'Session deleted');
   }
 
-  /**
-   * Save state to Redis
-   */
   private async saveState(state: SessionState): Promise<void> {
     state.updatedAt = new Date();
 
-    // Convert Map to object for JSON serialization
+    if (this.useMemory) {
+      this.memorySessions.set(state.sessionId, state);
+      return;
+    }
+
+    if (!this.redis) return;
+
     const serialized = {
       ...state,
       tasks: Object.fromEntries(state.tasks),
@@ -221,9 +278,6 @@ export class Blackboard {
     await this.redis.hset('nexus:sessions', state.sessionId, JSON.stringify(serialized));
   }
 
-  /**
-   * Parse state from Redis
-   */
   private parseState(data: string): SessionState {
     const parsed = JSON.parse(data);
     return {
@@ -234,17 +288,25 @@ export class Blackboard {
     };
   }
 
-  /**
-   * Publish event to Redis
-   */
   private async publishEvent(event: string, data: any): Promise<void> {
+    if (this.useMemory) {
+      this.memoryEvents.emit('event', { event, data });
+      return;
+    }
+
+    if (!this.publisher) return;
     await this.publisher.publish('nexus:events', JSON.stringify({ event, data }));
   }
 
-  /**
-   * Subscribe to events
-   */
   async subscribe(callback: (event: string, data: any) => void): Promise<void> {
+    if (this.useMemory) {
+      this.memoryEvents.on('event', ({ event, data }) => callback(event, data));
+      logger.info('Subscribed to in-memory events');
+      return;
+    }
+
+    if (!this.subscriber) return;
+
     await this.subscriber.subscribe('nexus:events');
 
     this.subscriber.on('message', (channel, message) => {
@@ -258,7 +320,7 @@ export class Blackboard {
       }
     });
 
-    logger.info('Subscribed to events');
+    logger.info('Subscribed to Redis events');
   }
 }
 

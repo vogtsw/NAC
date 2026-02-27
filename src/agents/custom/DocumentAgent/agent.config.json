@@ -1,0 +1,37 @@
+{
+  "description": "专业的文档处理 Agent，负责文档分析、重写、格式转换等任务",
+  "strengths": [
+    "文档分析",
+    "内容重写",
+    "格式转换",
+    "文档摘要",
+    "多语言翻译"
+  ],
+  "weaknesses": [
+    "不适合代码开发任务",
+    "不擅长数据分析"
+  ],
+  "idealTasks": [
+    "rewrite document",
+    "analyze document",
+    "convert format",
+    "summarize text",
+    "translate document",
+    "extract content",
+    "edit docx",
+    "process pdf"
+  ],
+  "requiredSkills": [
+    "docx-processing",
+    "file-ops",
+    "text-analysis"
+  ],
+  "examples": [
+    "重写这份 Word 文档使其更专业",
+    "分析 PDF 文档并提取关键信息",
+    "将 Markdown 文档转换为 PDF"
+  ],
+  "version": "1.0.0",
+  "author": "Your Name",
+  "systemPromptFile": "DocumentAgent.system.md"
+}

@@ -1,6 +1,6 @@
 # NexusAgent-Cluster (NAC)
 
-**Multi-Agent Orchestration System** - A TypeScript/Node.js based distributed agent cluster for intelligent task automation.
+**Multi-Agent Orchestration System** - A TypeScript/Node.js based distributed agent cluster for intelligent task automation with DAG-based parallel scheduling.
 
 ## Overview
 
@@ -14,9 +14,10 @@ NexusAgent-Cluster (NAC) is an extensible multi-agent orchestration system that 
 | **Dynamic Agent Generation** | Creates specialized agents on-demand based on task requirements |
 | **DAG-Based Scheduling** | Identifies parallelizable tasks using Directed Acyclic Graph algorithms |
 | **Skills System** | Modular, pluggable capabilities that agents can dynamically load |
+| **Session Memory** | Markdown-based conversation history storage (no RAG required) |
+| **Agent Prompts** | Configurable system prompts stored as MD files |
 | **Multi-LLM Support** | Works with Zhipu AI, DeepSeek, OpenAI, Qwen, and more |
 | **Event-Driven Architecture** | Real-time event broadcasting with in-memory and Redis-based EventBus |
-| **RESTful API** | Fastify-based high-performance HTTP server |
 | **Type-Safe** | Built with TypeScript 5+ for full type safety |
 
 ### Supported Task Types
@@ -37,13 +38,10 @@ Runtime:
 Package Manager:
   - pnpm
 
-API Framework:
-  - Fastify (high-performance HTTP)
-  - WebSocket support
-
 State Management:
   - Redis 7+ (optional, for distributed state)
   - In-memory fallback
+  - Markdown-based session storage
 
 LLM Integration:
   - OpenAI SDK (compatible with multiple providers)
@@ -68,8 +66,8 @@ Build Tools:
 
 ```bash
 # Clone the repository
-git clone https://github.com/vogtsw/NAC.git
-cd NAC
+git clone https://github.com/your-org/nexus-agent-cluster.git
+cd nexus-agent-cluster
 
 # Install dependencies
 pnpm install
@@ -113,17 +111,14 @@ ZHIPU_MODEL=glm-4-flash
 # Run CLI interface
 pnpm cli run "Create a user login RESTful API"
 
-# Start API server
-pnpm start
+# Interactive chat mode
+pnpm cli chat
 
-# Development mode with hot reload
-pnpm dev
+# Build the project
+pnpm build
 
 # Run tests
 pnpm test
-
-# Run integration tests
-pnpm test:integration
 ```
 
 ## Project Structure
@@ -144,7 +139,9 @@ nexus-agent-cluster/
 │   │   ├── Orchestrator.ts    # Main coordinator
 │   │   ├── IntentParser.ts    # Natural language parser
 │   │   ├── DAGBuilder.ts      # Task dependency graph
-│   │   └── Scheduler.ts       # Parallel task executor
+│   │   ├── Scheduler.ts       # Parallel task executor
+│   │   ├── AgentRouter.ts     # LLM-based agent routing
+│   │   └── AgentRegistry.ts   # Dynamic agent registration
 │   ├── skills/                # Skills System
 │   │   ├── SkillManager.ts    # Skill registry
 │   │   ├── types.ts           # Type definitions
@@ -156,21 +153,29 @@ nexus-agent-cluster/
 │   │       └── TerminalSkill.ts
 │   ├── llm/                   # LLM Abstraction
 │   │   ├── LLMClient.ts       # Universal LLM client
-│   │   └── prompts.ts         # Prompt templates
+│   │   ├── PromptBuilder.ts   # Context assembler
+│   │   └── prompts.ts         # System prompts
 │   ├── state/                 # State Management
 │   │   ├── Blackboard.ts      # Shared state (Redis)
+│   │   ├── SessionStore.ts    # MD-based session storage
 │   │   ├── EventBus.ts        # Event pub/sub
 │   │   └── models.ts          # Data models
-│   ├── api/                   # API Layer
-│   │   ├── server.ts          # Fastify server
-│   │   └── routes/            # HTTP routes
 │   ├── monitoring/            # Logging & Metrics
 │   ├── config/                # Configuration
 │   └── cli.ts                 # CLI interface
-├── scripts/                   # Test Scripts
-│   ├── test-zhipu.ts         # Zhipu API tests
-│   ├── test-deepseek.ts      # DeepSeek API tests
-│   └── test-integration.ts   # Integration tests
+├── config/                    # Configuration Files
+│   └── agents/                # Agent System Prompts
+│       ├── CodeAgent.system.md
+│       ├── DataAgent.system.md
+│       ├── AnalysisAgent.system.md
+│       ├── AutomationAgent.system.md
+│       ├── GenericAgent.system.md
+│       └── default.system.md
+├── memory/                    # Session & Artifact Storage
+│   ├── sessions/              # Conversation history (MD)
+│   ├── feedback/              # User feedback (MD)
+│   └── artifacts/             # Task outputs
+├── skills/                    # User Skills (SKILL.md)
 ├── tests/                     # Tests
 ├── package.json
 ├── tsconfig.json
@@ -178,48 +183,137 @@ nexus-agent-cluster/
 └── README.md
 ```
 
-## API Endpoints
-
-### Task Management
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/tasks/submit` | POST | Submit a new task |
-| `/api/v1/tasks/:id` | GET | Get task details |
-| `/api/v1/tasks/session/:id/tasks` | GET | Get session tasks |
-| `/api/v1/tasks/:id/cancel` | DELETE | Cancel a task |
-
-### Agent Management
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/agents/` | GET | List all agents |
-| `/api/v1/agents/:id` | GET | Get agent details |
-| `/api/v1/agents/stats` | GET | Get statistics |
-| `/api/v1/agents/types` | GET | List agent types |
-
-### Skills
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/skills/` | GET | List all skills |
-| `/api/v1/skills/:id` | GET | Get skill details |
-| `/api/v1/skills/execute` | POST | Execute a skill |
-
-### Health
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-
 ## CLI Usage
 
 ```bash
-# Execute a task
+# Interactive chat mode
+pnpm cli chat
+
+# Execute a single task
 pnpm cli run "Generate a TypeScript function to calculate Fibonacci numbers"
 
+# Execute from file (avoid encoding issues)
+pnpm cli run --file task.txt
+
+# Show system status
+pnpm cli status
+
+# List all skills
+pnpm cli skills list
+
+# Show skill info
+pnpm cli skill info code-generation
+
+# Enable/disable a skill
+pnpm cli skill enable code-generation
+pnpm cli skill disable code-generation
+
+# Test a skill
+pnpm cli skill test code-generation
+
 # Show help
-pnpm cli --help
+pnpm cli help
+```
+
+### Interactive Mode Commands
+
+When in interactive mode (`pnpm cli chat`), you can use:
+
+| Command | Description |
+|---------|-------------|
+| `/status` | Show system status |
+| `/skills` | List available skills |
+| `/session` | Show current session info |
+| `/clear` | Clear screen |
+| `/exit`, `/quit` | Exit interactive mode |
+
+## Architecture
+
+### Request Flow
+
+```
+User Input
+    ↓
+Session Store (Create/Update Session)
+    ↓
+Intent Parser (LLM)
+    ↓
+Agent Router (LLM-based semantic matching)
+    ↓
+DAG Builder (Task Planning with intelligent routing)
+    ↓
+Scheduler (Parallel Execution)
+    ↓
+Agent Factory (Create Agents)
+    ↓
+PromptBuilder (Assemble Context)
+├── System Prompt (config/agents/*.system.md)
+├── Session History (memory/sessions/*.md)
+├── Skills Summary
+└── User Input
+    ↓
+LLM Call
+    ↓
+Skills Execution
+    ↓
+Session Store (Save Response)
+    ↓
+Result Aggregation
+```
+
+### Intelligent Agent Routing
+
+The system uses LLM-based semantic matching to select the most appropriate agents for each task:
+
+1. **AgentRegistry** - Maintains capability profiles for all agents
+2. **AgentRouter** - Uses LLM to semantically match tasks to agents
+3. **Collaboration Detection** - Identifies when multiple agents should work together
+4. **Dynamic Skill Assignment** - Suggests relevant skills based on task requirements
+
+### Custom Agents
+
+Create custom agents by extending `BaseAgent`:
+
+```typescript
+import { BaseAgent } from './BaseAgent.js';
+
+export class MyCustomAgent extends BaseAgent {
+  constructor(llm: any, skillManager: any) {
+    super(llm, skillManager, 'MyCustomAgent');
+  }
+
+  async execute(task: any): Promise<any> {
+    // Your custom logic here
+  }
+}
+```
+
+### Custom Skills
+
+Add custom skills to the `skills/` directory:
+
+```bash
+skills/
+└── my-skill/
+    └── SKILL.md
+```
+
+SKILL.md format:
+
+```markdown
+---
+name: my-skill
+description: My custom skill
+category: custom
+---
+
+## Overview
+Description of what this skill does.
+
+## Usage
+\`\`\`
+my-skill.execute(param1, param2)
+\`\`\`
 ```
 
 ## Development
@@ -228,7 +322,7 @@ pnpm cli --help
 
 ```bash
 # Type checking
-pnpm check
+pnpm type-check
 
 # Build
 pnpm build
@@ -243,43 +337,8 @@ pnpm lint
 # Unit tests
 pnpm test
 
-# Integration tests
-pnpm test:integration
-
 # Test coverage
 pnpm test:coverage
-```
-
-## Architecture
-
-### Request Flow
-
-```
-User Input
-    ↓
-Intent Parser (LLM)
-    ↓
-DAG Builder (Task Planning)
-    ↓
-Scheduler (Parallel Execution)
-    ↓
-Agent Factory (Create Agents)
-    ↓
-Skills Execution
-    ↓
-Result Aggregation
-```
-
-### Event Flow
-
-```
-Event Publisher
-    ↓
-Event Bus (Redis/Memory)
-    ↓
-Subscribers (Agents, Monitors)
-    ↓
-Real-time Updates (WebSocket)
 ```
 
 ## Configuration
@@ -294,10 +353,6 @@ TASK_TIMEOUT=300000
 # Orchestrator
 ENABLE_DAG_OPTIMIZATION=true
 MAX_TASK_RETRIES=3
-
-# API
-API_HOST=0.0.0.0
-API_PORT=3000
 
 # Monitoring
 LOG_LEVEL=info

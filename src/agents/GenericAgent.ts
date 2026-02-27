@@ -50,7 +50,7 @@ export class GenericAgent extends BaseAgent {
   }
 
   /**
-   * Execute task using skills
+   * Execute task using skills (with LLM fallback)
    */
   private async executeWithSkills(task: any): Promise<any> {
     const context: ExecutionContext = {
@@ -62,10 +62,34 @@ export class GenericAgent extends BaseAgent {
       blackboard: null,
     };
 
+    // 如果没有技能需求，直接使用LLM
+    if (!task.requiredSkills || task.requiredSkills.length === 0) {
+      this.logger.debug({ taskId: task.id }, 'No skills required, using LLM directly');
+      return await this.executeWithLLM(task);
+    }
+
+    // 尝试使用技能，如果失败则回退到LLM
     const results = [];
+    let allSkillsSucceeded = true;
+
     for (const skillName of task.requiredSkills) {
-      const result = await this.useSkill(skillName, task, context);
-      results.push(result);
+      try {
+        const result = await this.useSkill(skillName, task, context);
+        results.push(result);
+        if (!result.success) {
+          allSkillsSucceeded = false;
+        }
+      } catch (error: any) {
+        this.logger.warn({ skill: skillName, error: error.message }, 'Skill execution failed, will use LLM fallback');
+        allSkillsSucceeded = false;
+        break;
+      }
+    }
+
+    // 如果任何技能失败，使用LLM完成整个任务
+    if (!allSkillsSucceeded) {
+      this.logger.info({ taskId: task.id }, 'Some skills failed, using LLM fallback');
+      return await this.executeWithLLM(task);
     }
 
     return {
@@ -135,6 +159,14 @@ ${task.dependencies ? `依赖任务：${task.dependencies.join(', ')}` : ''}
 请提供完成该任务的详细结果。`;
 
     const response = await this.callLLM(prompt);
+
+    // 根据任务类型返回适当格式的结果
+    if (task.description?.includes('分析') || task.name?.includes('分析')) {
+      return {
+        taskId: task.id,
+        analysis: response,
+      };
+    }
 
     return {
       taskId: task.id,
