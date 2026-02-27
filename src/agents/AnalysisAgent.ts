@@ -43,10 +43,14 @@ export class AnalysisAgent extends BaseAgent {
   private async executeReview(task: any): Promise<any> {
     const { target, type = 'code', content } = task;
 
-    if (type === 'code' && content) {
+    // 如果没有具体字段，使用任务名称和描述作为fallback
+    const reviewTarget = target ?? task.name;
+    const reviewContent = content ?? task.description;
+
+    if (type === 'code' && reviewContent && reviewContent !== task.description) {
       return await this.useSkill(
         'code-review',
-        { code: content, language: task.language || 'typescript' },
+        { code: reviewContent, language: task.language || 'typescript' },
         {} as ExecutionContext
       );
     }
@@ -54,8 +58,8 @@ export class AnalysisAgent extends BaseAgent {
     const prompt = `请审查以下内容：
 
 类型：${type}
-目标：${target}
-${content ? `内容：\n${content}` : ''}
+目标：${reviewTarget}
+${reviewContent ? `内容：\n${reviewContent}` : ''}
 
 请提供详细的审查意见和改进建议。`;
 
@@ -71,11 +75,16 @@ ${content ? `内容：\n${content}` : ''}
   private async executeAnalysis(task: any): Promise<any> {
     const { subject, context, focus } = task;
 
+    // 如果没有具体字段，使用任务名称和描述作为分析内容
+    const analysisSubject = subject ?? task.name;
+    const analysisContext = context ?? task.description ?? '通用';
+    const analysisFocus = focus ?? '全面分析';
+
     const prompt = `请进行深入分析：
 
-分析主题：${subject}
-上下文：${context || '通用'}
-关注点：${focus || '全面分析'}
+分析主题：${analysisSubject}
+上下文：${analysisContext}
+关注点：${analysisFocus}
 
 请提供结构化的分析结果，包括：
 1. 现状分析
@@ -88,16 +97,19 @@ ${content ? `内容：\n${content}` : ''}
     return {
       taskId: task.id,
       analysis: response,
-      subject,
+      subject: analysisSubject,
     };
   }
 
   private async executeTest(task: any): Promise<any> {
     const { target, type = 'unit', framework = 'vitest' } = task;
 
+    // 如果没有target，使用任务名称和描述作为fallback
+    const testTarget = target ?? `任务：${task.name}\n描述：${task.description}`;
+
     const prompt = `请设计测试方案：
 
-测试目标：${target}
+测试目标：${testTarget}
 测试类型：${type}
 测试框架：${framework}
 
@@ -112,7 +124,7 @@ ${content ? `内容：\n${content}` : ''}
     return {
       taskId: task.id,
       testPlan: response,
-      target,
+      target: testTarget,
       type,
     };
   }

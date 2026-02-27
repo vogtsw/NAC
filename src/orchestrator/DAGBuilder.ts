@@ -111,12 +111,13 @@ export class DAGBuilder {
 
     const dag = new DAG();
     steps.forEach((step: any, index: number) => {
+      // 清空技能列表，让Agent直接使用LLM执行
       dag.addTask({
         id: step.id || `task-${index + 1}`,
         name: step.name,
         description: step.description,
         agentType: step.agent_type || this.inferAgentType(step),
-        requiredSkills: step.required_skills || [],
+        requiredSkills: [], // 清空技能，让Agent使用LLM
         dependencies: step.dependencies || [],
         estimatedDuration: step.estimated_duration || 300,
       });
@@ -146,16 +147,44 @@ export class DAGBuilder {
           primaryGoal: intent.primaryGoal,
           capabilities: intent.capabilities.join(', '),
           complexity: intent.complexity,
+          availableSkills: [], // 不传递技能列表，让任务直接使用LLM
         }),
         { responseFormat: 'json' }
       );
 
+      // 解析 JSON 并处理 Unicode 转义
       const parsed = JSON.parse(plan);
-      return parsed.steps || [];
+      const steps = parsed.steps || [];
+
+      // 修复中文字符编码问题
+      return this.fixUnicodeInSteps(steps);
     } catch (error: any) {
       logger.warn({ error: error.message }, 'Failed to generate steps with LLM, using defaults');
       return this.getDefaultSteps(intent);
     }
+  }
+
+  /**
+   * 修复步骤中的 Unicode 转义中文字符
+   * 将 \u4f60\u597d 转换为 你好
+   */
+  private fixUnicodeInSteps(steps: any[]): any[] {
+    return steps.map(step => ({
+      ...step,
+      name: this.unescapeUnicode(step.name || ''),
+      description: this.unescapeUnicode(step.description || ''),
+    }));
+  }
+
+  /**
+   * 解码 Unicode 转义字符
+   */
+  private unescapeUnicode(text: string): string {
+    if (!text) return text;
+    // 处理 \uXXXX 格式的 Unicode 转义
+    return text.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    );
   }
 
   /**
