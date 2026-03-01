@@ -509,6 +509,16 @@ async function cmdSkills(args: string[], options: Record<string, any>): Promise<
     case 'packages':
       await cmdSkillsPackages(skillManager);
       break;
+    case 'install':
+      await cmdSkillInstall(args.slice(1), options);
+      break;
+    case 'remove':
+    case 'uninstall':
+      await cmdSkillRemove(args.slice(1));
+      break;
+    case 'update':
+      await cmdSkillUpdate(args.slice(1));
+      break;
     default:
       await cmdSkillsList(skillManager, options);
   }
@@ -638,6 +648,168 @@ async function cmdSkillsPackages(skillManager: any): Promise<void> {
     if (pkg.permissions?.length) {
       console.log(`  Permissions: ${pkg.permissions.join(', ')}`);
     }
+  }
+}
+
+/**
+ * Install a skill from various sources
+ * Usage: skills install <npm|git|local|mcp> [options]
+ */
+async function cmdSkillInstall(args: string[], options: Record<string, any>): Promise<void> {
+  const { getSkillInstaller } = await import('./skills/SkillInstaller.js');
+  const installer = getSkillInstaller();
+
+  const source = args[0] as 'npm' | 'git' | 'local' | 'mcp';
+
+  if (!source) {
+    console.error('\nError: Installation source required\n');
+    console.log('Usage: npm run cli skills install <source> [options]\n');
+    console.log('Sources:');
+    console.log('  npm    <package>[@version]  Install from npm package');
+    console.log('  git    <repo-url>          Install from git repository');
+    console.log('  local  <path>              Install from local directory');
+    console.log('  mcp    <name> [--url]      Create MCP server skill\n');
+    console.log('Examples:');
+    console.log('  pnpm cli skills install npm @nexus-skills/github');
+    console.log('  pnpm cli skills install npm nexus-skill-weather@1.0.0');
+    console.log('  pnpm cli skills install git https://github.com/user/skills.git');
+    console.log('  pnpm cli skills install local ./my-skill');
+    console.log('  pnpm cli skills install mcp my-server --url ws://localhost:3000');
+    process.exit(1);
+  }
+
+  const installOptions: any = { source };
+
+  switch (source) {
+    case 'npm':
+      const pkg = args[1];
+      if (!pkg) {
+        console.error('Error: Package name required');
+        console.log('Usage: pnpm cli skills install npm <package>[@version]');
+        process.exit(1);
+      }
+      const [name, version] = pkg.split('@');
+      installOptions.name = name;
+      installOptions.version = version || 'latest';
+      break;
+
+    case 'git':
+      const url = args[1];
+      const gitName = options.name;
+      if (!url) {
+        console.error('Error: Git repository URL required');
+        console.log('Usage: pnpm cli skills install git <repo-url> [--name <name>]');
+        process.exit(1);
+      }
+      installOptions.url = url;
+      if (gitName) installOptions.name = gitName;
+      break;
+
+    case 'local':
+      const path = args[1];
+      const localName = options.name;
+      if (!path) {
+        console.error('Error: Local path required');
+        console.log('Usage: pnpm cli skills install local <path> [--name <name>]');
+        process.exit(1);
+      }
+      installOptions.path = path;
+      if (localName) installOptions.name = localName;
+      break;
+
+    case 'mcp':
+      const mcpName = args[1];
+      if (!mcpName) {
+        console.error('Error: MCP server name required');
+        console.log('Usage: pnpm cli skills install mcp <name> [--url <url>]');
+        process.exit(1);
+      }
+      installOptions.name = mcpName;
+      if (options.url) installOptions.url = options.url;
+      break;
+  }
+
+  if (options.force) installOptions.force = true;
+
+  console.log(`\nInstalling skill from ${source}...`);
+  const result = await installer.install(installOptions);
+
+  if (result.success) {
+    console.log(`\n✓ ${result.message}`);
+    if (result.installedPath) {
+      console.log(`  Path: ${result.installedPath}`);
+    }
+    console.log('\nTip: Restart the application to load the new skill');
+  } else {
+    console.error(`\n✗ ${result.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Remove an installed skill
+ * Usage: skills remove <skill-name>
+ */
+async function cmdSkillRemove(args: string[]): Promise<void> {
+  const { getSkillInstaller } = await import('./skills/SkillInstaller.js');
+  const installer = getSkillInstaller();
+
+  const skillName = args[0];
+
+  if (!skillName) {
+    console.error('Error: Skill name required');
+    console.log('Usage: pnpm cli skills remove <skill-name>');
+    process.exit(1);
+  }
+
+  // Check if skill is built-in
+  const skillManager = getSkillManager();
+  await skillManager.initialize();
+  const skill = skillManager.getSkill(skillName);
+
+  if (skill?.builtin) {
+    console.error(`\n✗ Cannot remove built-in skill: ${skillName}`);
+    console.log('Built-in skills cannot be removed. You can disable them with:');
+    console.log(`  pnpm cli skill disable ${skillName}`);
+    process.exit(1);
+  }
+
+  const result = await installer.remove(skillName);
+
+  if (result.success) {
+    console.log(`\n✓ ${result.message}`);
+    console.log('\nTip: Restart the application to apply changes');
+  } else {
+    console.error(`\n✗ ${result.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Update a skill from git
+ * Usage: skills update <skill-name>
+ */
+async function cmdSkillUpdate(args: string[]): Promise<void> {
+  const { getSkillInstaller } = await import('./skills/SkillInstaller.js');
+  const installer = getSkillInstaller();
+
+  const skillName = args[0];
+
+  if (!skillName) {
+    console.error('Error: Skill name required');
+    console.log('Usage: pnpm cli skills update <skill-name>');
+    process.exit(1);
+  }
+
+  console.log(`\nUpdating skill: ${skillName}...`);
+  const result = await installer.update(skillName);
+
+  if (result.success) {
+    console.log(`\n✓ ${result.message}`);
+    console.log('\nTip: Restart the application to apply changes');
+  } else {
+    console.error(`\n✗ ${result.message}`);
+    process.exit(1);
   }
 }
 
@@ -1474,6 +1646,9 @@ Commands:
   skills search <query>  Search skills by name or description
   skills stats           Show skill statistics
   skills packages        List external skill packages
+  skills install <src>   Install a skill from npm/git/local/mcp
+  skills remove <name>   Remove an installed skill
+  skills update <name>   Update a skill from git
   skill info <name>      Show detailed skill information
   skill enable <name>    Enable a skill
   skill disable <name>   Disable a skill
@@ -1501,6 +1676,12 @@ Examples:
   pnpm cli status
   pnpm cli skills list
   pnpm cli skills search "code"
+  pnpm cli skills install npm @nexus-skills/github
+  pnpm cli skills install git https://github.com/user/skill.git
+  pnpm cli skills install local ./my-skill
+  pnpm cli skills install mcp my-server --url ws://localhost:3000
+  pnpm cli skills remove github
+  pnpm cli skills update github
   pnpm cli skill info code-generation
   pnpm cli skill test file-ops
   pnpm cli user profile          Show user profile
@@ -1522,6 +1703,11 @@ Options:
     --all, -a         Show all skills including disabled
     --external, -e    Show only external/custom skills
     --builtin, -b     Show only built-in skills
+
+  skills install:
+    --force           Overwrite existing skill
+    --name <name>     Custom skill name (for git/local)
+    --url <url>       MCP server URL
 
   skill test:
     --params <json>   Test with custom parameters (JSON string)
