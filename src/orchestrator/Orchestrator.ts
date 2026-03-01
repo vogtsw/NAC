@@ -15,6 +15,7 @@ import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
 import { getOrLoadUserProfile } from '../state/UserProfile.js';
 import { getTaskScheduler } from '../scheduler/Scheduler.js';
+import { getFeedbackCollector } from '../evolution/FeedbackCollector.js';
 
 const logger = getLogger('Orchestrator');
 
@@ -44,6 +45,7 @@ export class Orchestrator {
   private blackboard: ReturnType<typeof getBlackboard>;
   private sessionStore: ReturnType<typeof getSessionStore>;
   private taskScheduler: ReturnType<typeof getTaskScheduler>;
+  private feedbackCollector: ReturnType<typeof getFeedbackCollector>;
   private initialized: boolean = false;
 
   constructor(config: OrchestratorConfig = {}) {
@@ -58,6 +60,7 @@ export class Orchestrator {
     this.blackboard = getBlackboard();
     this.sessionStore = getSessionStore();
     this.taskScheduler = getTaskScheduler();
+    this.feedbackCollector = getFeedbackCollector();
 
     logger.info('Orchestrator created');
   }
@@ -76,6 +79,7 @@ export class Orchestrator {
       await this.eventBus.initialize();
       await this.sessionStore.ensureDirectories();
       await this.taskScheduler.initialize();
+      await this.feedbackCollector.initialize();
       this.initialized = true;
       logger.info('Orchestrator initialized successfully');
     } catch (error: any) {
@@ -171,6 +175,27 @@ export class Orchestrator {
             executionTime,
             success: result.success,
           });
+
+          // Collect execution feedback (non-blocking)
+          try {
+            const dagTasks = dag.getAllTasks();
+            await this.feedbackCollector.collectFeedback({
+              sessionId,
+              taskId: `${sessionId}_${Date.now()}`,
+              timestamp: new Date(),
+              agentType: agentUsed,
+              systemPromptUsed: `System prompt for ${agentUsed}`,
+              skillsUsed,
+              executionTime,
+              success: result.success,
+              totalAgents: dagTasks.length,
+              agentSequence: dagTasks.map(t => t.agentType),
+              parallelGroups: 1, // TODO: Calculate from DAG
+              actualExecutionTime: executionTime,
+            });
+          } catch (feedbackError: any) {
+            logger.warn({ error: feedbackError.message }, 'Failed to collect feedback');
+          }
         } catch (error: any) {
           logger.warn({ error: error.message }, 'Failed to record user interaction');
         }
@@ -317,6 +342,65 @@ export class Orchestrator {
    */
   getTaskScheduler() {
     return this.taskScheduler;
+  }
+
+  /**
+   * Get feedback collector
+   */
+  getFeedbackCollector() {
+    return this.feedbackCollector;
+  }
+
+  /**
+   * Submit user feedback for a session
+   */
+  async submitFeedback(sessionId: string, feedback: {
+    rating?: number;
+    satisfied?: boolean;
+    issues?: string[];
+    suggestions?: string[];
+  }): Promise<any> {
+    try {
+      // Get session data from SessionStore
+      const metadata = await this.sessionStore.getMetadata(sessionId);
+      if (!metadata) {
+        return {
+          success: false,
+          error: 'Session not found',
+        };
+      }
+
+      // Use default values for feedback fields that aren't stored in SessionMetadata
+      await this.feedbackCollector.collectFeedback({
+        sessionId,
+        taskId: `${sessionId}_feedback_${Date.now()}`,
+        timestamp: new Date(),
+        agentType: 'GenericAgent', // Default since not stored in metadata
+        systemPromptUsed: 'System prompt',
+        skillsUsed: [], // Default empty array
+        executionTime: 0, // Default since not stored
+        success: metadata.status === 'completed',
+        totalAgents: 1,
+        agentSequence: [],
+        parallelGroups: 1,
+        actualExecutionTime: 0,
+        rating: feedback.rating,
+        satisfied: feedback.satisfied,
+        issues: feedback.issues,
+        suggestions: feedback.suggestions,
+      });
+
+      return {
+        success: true,
+        message: 'Thank you for your feedback!',
+      };
+    } catch (error: any) {
+      logger.error({ error, sessionId }, 'Failed to submit feedback');
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
   /**

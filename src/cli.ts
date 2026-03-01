@@ -136,6 +136,10 @@ async function executeCommand(cli: CLIOptions): Promise<void> {
       await cmdGateway(cli.args, cli.options);
       break;
 
+    case 'feedback':
+      await cmdFeedback(cli.args, cli.options);
+      break;
+
     case 'clean':
       await cmdClean();
       break;
@@ -1682,6 +1686,193 @@ async function cmdGateway(_args: string[], options: Record<string, any>): Promis
 }
 
 /**
+ * Feedback management command
+ * Usage: feedback <stats|submit|list>
+ */
+async function cmdFeedback(args: string[], options: Record<string, any>): Promise<void> {
+  const { getOrchestrator } = await import('./orchestrator/Orchestrator.js');
+  const orchestrator = getOrchestrator();
+  await orchestrator.initialize();
+
+  const subcommand = args[0] || 'stats';
+
+  switch (subcommand) {
+    case 'stats':
+      await cmdFeedbackStats(orchestrator);
+      break;
+
+    case 'submit':
+      await cmdFeedbackSubmit(orchestrator, args.slice(1), options);
+      break;
+
+    case 'list':
+      await cmdFeedbackList(orchestrator, args.slice(1));
+      break;
+
+    default:
+      console.error('\nError: Unknown subcommand');
+      console.log('Usage: pnpm cli feedback <stats|submit|list>');
+      console.log('  pnpm cli feedback stats              - Show feedback statistics');
+      console.log('  pnpm cli feedback submit <sessionId>  - Submit feedback for a session');
+      console.log('  pnpm cli feedback list <agentType>     - List feedback for an agent');
+      process.exit(1);
+  }
+}
+
+/**
+ * Show feedback statistics
+ */
+async function cmdFeedbackStats(orchestrator: any): Promise<void> {
+  const feedbackCollector = orchestrator.getFeedbackCollector();
+  const stats = await feedbackCollector.getStatistics();
+
+  console.log('\n=== Feedback Statistics ===\n');
+
+  console.log('Overview:');
+  console.log(`  Total Feedbacks: ${stats.totalFeedbacks}`);
+  console.log(`  Average Rating: ${stats.averageRating.toFixed(2)}/5`);
+  console.log(`  Success Rate: ${(stats.successRate * 100).toFixed(1)}%`);
+
+  if (Object.keys(stats.agentPerformance).length > 0) {
+    console.log('\nAgent Performance:');
+    for (const [agentType, perf] of Object.entries(stats.agentPerformance)) {
+      const perfData = perf as { totalTasks: number; averageRating: number; averageExecutionTime: number };
+      console.log(`  ${agentType}:`);
+      console.log(`    Tasks: ${perfData.totalTasks}`);
+      console.log(`    Avg Rating: ${perfData.averageRating.toFixed(2)}/5`);
+      console.log(`    Avg Time: ${perfData.averageExecutionTime.toFixed(0)}ms`);
+    }
+  }
+
+  if (stats.commonIssues.length > 0) {
+    console.log('\nCommon Issues:');
+    for (const issue of stats.commonIssues) {
+      console.log(`  - ${issue}`);
+    }
+  }
+
+  console.log();
+}
+
+/**
+ * Submit feedback for a session
+ */
+async function cmdFeedbackSubmit(orchestrator: any, args: string[], options: Record<string, any>): Promise<void> {
+  const sessionId = args[0];
+
+  if (!sessionId) {
+    console.error('\nError: Session ID required');
+    console.log('Usage: pnpm cli feedback submit <sessionId> [--rating 1-5] [--satisfied] [--issues "issue1,issue2"] [--suggestions "suggestion1,suggestion2"]');
+    process.exit(1);
+  }
+
+  const feedback: any = {};
+
+  if (options.rating) {
+    const rating = parseInt(options.rating);
+    if (rating < 1 || rating > 5) {
+      console.error('Error: Rating must be between 1 and 5');
+      process.exit(1);
+    }
+    feedback.rating = rating;
+  }
+
+  if (options.satisfied !== undefined) {
+    feedback.satisfied = options.satisfied === 'true' || options.satisfied === true;
+  }
+
+  if (options.issues) {
+    feedback.issues = options.issues.split(',').map((s: string) => s.trim());
+  }
+
+  if (options.suggestions) {
+    feedback.suggestions = options.suggestions.split(',').map((s: string) => s.trim());
+  }
+
+  // Interactive mode if no feedback provided
+  if (Object.keys(feedback).length === 0) {
+    const readline = await import('readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    try {
+      const rating = await new Promise<string>((resolve) => {
+        rl.question('Rating (1-5): ', resolve);
+      });
+      if (rating) feedback.rating = parseInt(rating);
+
+      const satisfied = await new Promise<string>((resolve) => {
+        rl.question('Satisfied? (yes/no): ', resolve);
+      });
+      if (satisfied) feedback.satisfied = satisfied.toLowerCase() === 'yes';
+
+      const issues = await new Promise<string>((resolve) => {
+        rl.question('Issues (comma-separated, optional): ', resolve);
+      });
+      if (issues) feedback.issues = issues.split(',').map(s => s.trim());
+
+      const suggestions = await new Promise<string>((resolve) => {
+        rl.question('Suggestions (comma-separated, optional): ', resolve);
+      });
+      if (suggestions) feedback.suggestions = suggestions.split(',').map(s => s.trim());
+
+      rl.close();
+    } catch (error: any) {
+      rl.close();
+      throw error;
+    }
+  }
+
+  console.log(`\nSubmitting feedback for session: ${sessionId}`);
+  const result = await orchestrator.submitFeedback(sessionId, feedback);
+
+  if (result.success) {
+    console.log(`✓ ${result.message}`);
+  } else {
+    console.error(`✗ ${result.error}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * List feedback for an agent
+ */
+async function cmdFeedbackList(orchestrator: any, args: string[]): Promise<void> {
+  const agentType = args[0];
+
+  if (!agentType) {
+    console.error('\nError: Agent type required');
+    console.log('Usage: pnpm cli feedback list <agentType> [--limit 50]');
+    console.log('\nAvailable agent types:');
+    console.log('  CodeAgent, DataAgent, AnalysisAgent, AutomationAgent, GenericAgent');
+    process.exit(1);
+  }
+
+  const feedbackCollector = orchestrator.getFeedbackCollector();
+  const limit = parseInt(args[1] || '50');
+  const feedbacks = await feedbackCollector.getFeedbackForAgent(agentType, limit);
+
+  console.log(`\n=== Feedback for ${agentType} (${feedbacks.length} recent) ===\n`);
+
+  for (const feedback of feedbacks.slice(0, 20)) {
+    console.log(`\n[${new Date(feedback.timestamp).toLocaleString()}] ${feedback.sessionId.substring(0, 8)}...`);
+    console.log(`  Agent: ${feedback.agentType}`);
+    console.log(`  Success: ${feedback.success ? '✅' : '❌'}`);
+    console.log(`  Time: ${feedback.executionTime}ms`);
+    if (feedback.rating) {
+      console.log(`  Rating: ${feedback.rating}/5`);
+    }
+    if (feedback.issues && feedback.issues.length > 0) {
+      console.log(`  Issues: ${feedback.issues.join(', ')}`);
+    }
+  }
+
+  console.log(`\nShowing 20 of ${feedbacks.length} feedbacks\n`);
+}
+
+/**
  * Print help message
  */
 function printHelp(): void {
@@ -1721,6 +1912,9 @@ Commands:
   clean                  Clean Redis data
   serve                  Start API server
   gateway                Start WebSocket gateway (clawdbot-style)
+  feedback stats         Show feedback statistics
+  feedback submit        Submit user feedback for a session
+  feedback list          List feedback by agent type
   help                   Show this help message
 
 Examples:
@@ -1744,6 +1938,9 @@ Examples:
   pnpm cli schedule list
   pnpm cli serve                 Start API server
   pnpm cli gateway               Start WebSocket gateway
+  pnpm cli feedback stats        Show feedback statistics
+  pnpm cli feedback submit <sessionId> --rating 5 --satisfied
+  pnpm cli feedback list CodeAgent
 
 Interactive Commands (in chat mode):
   /status                Show system status
@@ -1777,6 +1974,13 @@ Options:
   serve commands:
     --host <address>  Host to bind to (default: 0.0.0.0)
     --port <number>   Port to listen on (default: 3000)
+
+  feedback commands:
+    --rating <1-5>    Rating for the task (1-5)
+    --satisfied       Whether satisfied with the result
+    --issues <text>   Issues encountered (comma-separated)
+    --suggestions <text>  Suggestions for improvement (comma-separated)
+    --limit <num>     Limit number of feedback results (default: 50)
 
 Environment:
   ZHIPU_API_KEY       Zhipu AI API key
