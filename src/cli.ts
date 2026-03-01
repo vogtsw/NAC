@@ -39,8 +39,12 @@ function fixEncoding(text: string): string {
 async function main() {
   // 设置控制台输出编码为 UTF-8
   if (process.platform === 'win32') {
-    process.stdout.setEncoding('utf8');
-    process.stderr.setEncoding('utf8');
+    if (typeof process.stdout.setEncoding === 'function') {
+      process.stdout.setEncoding('utf8');
+    }
+    if (typeof process.stderr.setEncoding === 'function') {
+      process.stderr.setEncoding('utf8');
+    }
   }
 
   const args = process.argv.slice(2);
@@ -112,6 +116,20 @@ async function executeCommand(cli: CLIOptions): Promise<void> {
 
     case 'skill':
       await cmdSkill(cli.args, cli.options);
+      break;
+
+    case 'user':
+      await cmdUser(cli.args, cli.options);
+      break;
+
+    case 'schedule':
+    case 'scheduled':
+      await cmdSchedule(cli.args, cli.options);
+      break;
+
+    case 'serve':
+    case 'server':
+      await cmdServe(cli.args, cli.options);
       break;
 
     case 'clean':
@@ -823,12 +841,590 @@ function getDefaultTestParams(skillName: string): any {
 }
 
 /**
+ * User management command
+ * Usage: user <profile|preferences|history|stats> [userId]
+ */
+async function cmdUser(args: string[], options: Record<string, any>): Promise<void> {
+  const { getUserProfile } = await import('./state/UserProfile.js');
+  const subcommand = args[0] || 'profile';
+  const userId = options.user || options.u || 'default';
+
+  const profile = getUserProfile(userId);
+  await profile.initialize();
+
+  switch (subcommand) {
+    case 'profile':
+      await cmdUserProfile(profile);
+      break;
+
+    case 'preferences':
+    case 'prefs':
+      await cmdUserPreferences(profile, args.slice(1));
+      break;
+
+    case 'history':
+      await cmdUserHistory(profile, parseInt(options.limit || '10'));
+      break;
+
+    case 'stats':
+      await cmdUserStats(profile);
+      break;
+
+    case 'update':
+      await cmdUserUpdate(profile, args.slice(1));
+      break;
+
+    default:
+      console.error(`Error: Unknown subcommand "${subcommand}"`);
+      console.log('Available subcommands: profile, preferences, history, stats, update');
+      break;
+  }
+}
+
+/**
+ * Show user profile
+ */
+async function cmdUserProfile(profile: any): Promise<void> {
+  const data = profile.exportData();
+  const parsed = JSON.parse(data);
+
+  console.log('\n=== User Profile ===\n');
+  console.log(`User ID: ${parsed.userId}`);
+  console.log(`Created: ${new Date(parsed.createdAt).toLocaleString('zh-CN')}`);
+  console.log(`Updated: ${new Date(parsed.updatedAt).toLocaleString('zh-CN')}`);
+
+  console.log('\n--- Preferences ---');
+  console.log(`Default Language: ${parsed.preferences.programming.defaultLanguage}`);
+  console.log(`Code Style: ${parsed.preferences.programming.codeStyle}`);
+  console.log(`Interaction Verbosity: ${parsed.preferences.interaction.verbosity}`);
+  console.log(`Time Zone: ${parsed.preferences.interaction.timeZone}`);
+
+  console.log('\n--- Statistics ---');
+  console.log(`Total Interactions: ${parsed.statistics.totalInteractions}`);
+  console.log(`Tasks Completed: ${parsed.statistics.totalTasksCompleted}`);
+  console.log(`Success Rate: ${(parsed.statistics.successRate * 100).toFixed(1)}%`);
+  if (parsed.statistics.averageExecutionTime > 0) {
+    console.log(`Avg Execution Time: ${parsed.statistics.averageExecutionTime.toFixed(2)}ms`);
+  }
+}
+
+/**
+ * Show user preferences
+ */
+async function cmdUserPreferences(profile: any, args: string[]): Promise<void> {
+  const prefs = profile.getPreferences();
+
+  if (args.length > 0 && args[0] === 'set') {
+    // Set preference: user preferences set <key> <value>
+    const key = args[1];
+    const value = args[2];
+    if (!key || !value) {
+      console.error('Error: Key and value required');
+      console.log('Usage: pnpm cli user preferences set <key> <value>');
+      return;
+    }
+    const updates: any = {};
+    updates[key] = value;
+    await profile.updatePreferences(updates);
+    console.log(`✓ Preference updated: ${key} = ${value}`);
+    return;
+  }
+
+  console.log('\n=== User Preferences ===\n');
+  console.log(JSON.stringify(prefs, null, 2));
+}
+
+/**
+ * Show user history
+ */
+async function cmdUserHistory(profile: any, limit: number): Promise<void> {
+  const history = profile.getHistory(limit);
+
+  console.log(`\n=== Recent History (last ${history.length}) ===\n`);
+
+  if (history.length === 0) {
+    console.log('No history yet.\n');
+    return;
+  }
+
+  for (const entry of history.reverse()) {
+    const timestamp = new Date(entry.timestamp).toLocaleString('zh-CN');
+    const status = entry.success ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+    console.log(`${status} [${timestamp}]`);
+    console.log(`  Agent: ${entry.agentUsed}`);
+    console.log(`  Input: ${entry.userInput.substring(0, 60)}...`);
+    console.log(`  Skills: ${entry.skillsUsed.join(', ') || 'none'}`);
+    console.log(`  Duration: ${entry.executionTime}ms`);
+    console.log();
+  }
+}
+
+/**
+ * Show user statistics
+ */
+async function cmdUserStats(profile: any): Promise<void> {
+  const stats = profile.getStatistics();
+
+  console.log('\n=== User Statistics ===\n');
+  console.log(`Total Interactions: ${stats.totalInteractions}`);
+  console.log(`Tasks Completed: ${stats.totalTasksCompleted}`);
+  console.log(`Success Rate: ${(stats.successRate * 100).toFixed(1)}%`);
+  console.log(`Avg Execution Time: ${stats.averageExecutionTime.toFixed(2)}ms`);
+
+  console.log('\n--- Most Used Agents ---');
+  const agents = Object.entries(stats.mostUsedAgents)
+    .sort((a, b) => (b[1] as number) - (a[1] as number))
+    .slice(0, 5);
+  for (const [agent, count] of agents) {
+    console.log(`  ${agent}: ${count}`);
+  }
+
+  console.log('\n--- Most Used Skills ---');
+  const skills = Object.entries(stats.mostUsedSkills)
+    .sort((a, b) => (b[1] as number) - (a[1] as number))
+    .slice(0, 5);
+  for (const [skill, count] of skills) {
+    console.log(`  ${skill}: ${count}`);
+  }
+
+  console.log('\n--- Recommendations ---');
+  const recommendedAgents = profile.getRecommendedAgents();
+  const recommendedSkills = profile.getRecommendedSkills();
+  console.log(`  Recommended Agents: ${recommendedAgents.join(', ') || 'none'}`);
+  console.log(`  Recommended Skills: ${recommendedSkills.join(', ') || 'none'}`);
+  console.log();
+}
+
+/**
+ * Update user preferences
+ */
+async function cmdUserUpdate(profile: any, args: string[]): Promise<void> {
+  if (args.length < 2) {
+    console.error('Error: Key and value required');
+    console.log('Usage: pnpm cli user update <key> <value>');
+    console.log('Examples:');
+    console.log('  pnpm cli user update programming.defaultLanguage Python');
+    console.log('  pnpm cli user update interaction.verbosity verbose');
+    return;
+  }
+
+  const key = args[0];
+  const value = args[1];
+  const updates: any = {};
+  updates[key] = value;
+
+  await profile.updatePreferences(updates);
+  console.log(`✓ Preference updated: ${key} = ${value}`);
+}
+
+/**
+ * Schedule management command
+ * Usage: schedule <cron|once|delay|list|cancel|pause|resume|executions> ...
+ */
+async function cmdSchedule(args: string[], options: Record<string, any>): Promise<void> {
+  const { getTaskScheduler } = await import('./scheduler/Scheduler.js');
+  const scheduler = getTaskScheduler();
+  await scheduler.initialize();
+
+  const subcommand = args[0] || 'list';
+
+  switch (subcommand) {
+    case 'cron':
+      await cmdScheduleCron(scheduler, args.slice(1), options);
+      break;
+
+    case 'once':
+      await cmdScheduleOnce(scheduler, args.slice(1), options);
+      break;
+
+    case 'delay':
+      await cmdScheduleDelay(scheduler, args.slice(1), options);
+      break;
+
+    case 'list':
+      await cmdScheduleList(scheduler);
+      break;
+
+    case 'cancel':
+      if (!args[1]) {
+        console.error('Error: Task ID required');
+        console.log('Usage: pnpm cli schedule cancel <taskId>');
+        return;
+      }
+      await cmdScheduleCancel(scheduler, args[1]);
+      break;
+
+    case 'pause':
+      if (!args[1]) {
+        console.error('Error: Task ID required');
+        console.log('Usage: pnpm cli schedule pause <taskId>');
+        return;
+      }
+      await cmdSchedulePause(scheduler, args[1]);
+      break;
+
+    case 'resume':
+      if (!args[1]) {
+        console.error('Error: Task ID required');
+        console.log('Usage: pnpm cli schedule resume <taskId>');
+        return;
+      }
+      await cmdScheduleResume(scheduler, args[1]);
+      break;
+
+    case 'executions':
+    case 'history':
+      if (!args[1]) {
+        console.error('Error: Task ID required');
+        console.log('Usage: pnpm cli schedule executions <taskId> [limit]');
+        return;
+      }
+      await cmdScheduleExecutions(scheduler, args[1], parseInt(args[2] || '10'));
+      break;
+
+    case 'info':
+      if (!args[1]) {
+        console.error('Error: Task ID required');
+        console.log('Usage: pnpm cli schedule info <taskId>');
+        return;
+      }
+      await cmdScheduleInfo(scheduler, args[1]);
+      break;
+
+    default:
+      console.error(`Error: Unknown subcommand "${subcommand}"`);
+      console.log('Available subcommands: cron, once, delay, list, cancel, pause, resume, executions, info');
+      break;
+  }
+}
+
+/**
+ * Create a cron scheduled task
+ */
+async function cmdScheduleCron(scheduler: any, args: string[], options: Record<string, any>): Promise<void> {
+  const expression = args[0];
+  const userInput = args.slice(1).join(' ');
+
+  if (!expression || !userInput) {
+    console.error('Error: Cron expression and task description required');
+    console.log('Usage: pnpm cli schedule cron "<expression>" <task description>');
+    console.log('Examples:');
+    console.log('  pnpm cli schedule cron "0 9 * * *" "Run daily report"');
+    console.log('  pnpm cli schedule cron "*/5 * * * *" "Check status every 5 minutes"');
+    return;
+  }
+
+  const task = {
+    id: `cron-${Date.now()}`,
+    name: options.name || `Cron ${expression}`,
+    description: userInput,
+    type: 'cron' as const,
+    schedule: {
+      cron: {
+        expression,
+        timezone: options.timezone || 'Asia/Shanghai',
+      },
+    },
+    task: {
+      userInput,
+      userId: options.user || 'default',
+    },
+    status: 'active' as const,
+    executions: [],
+    createdAt: new Date(),
+  };
+
+  const taskId = await scheduler.schedule(task);
+  console.log(`✓ Cron task scheduled: ${taskId}`);
+  console.log(`  Expression: ${expression}`);
+  console.log(`  Task: ${userInput}`);
+}
+
+/**
+ * Create a one-time scheduled task
+ */
+async function cmdScheduleOnce(scheduler: any, args: string[], options: Record<string, any>): Promise<void> {
+  const datetimeStr = args[0];
+  const userInput = args.slice(1).join(' ');
+
+  if (!datetimeStr || !userInput) {
+    console.error('Error: Date/time and task description required');
+    console.log('Usage: pnpm cli schedule once "<YYYY-MM-DD HH:MM>" <task description>');
+    console.log('Example:');
+    console.log('  pnpm cli schedule once "2024-12-25 09:00" "Run Christmas report"');
+    return;
+  }
+
+  const executeAt = new Date(datetimeStr);
+  if (isNaN(executeAt.getTime())) {
+    console.error('Error: Invalid date format. Use YYYY-MM-DD HH:MM');
+    return;
+  }
+
+  const task = {
+    id: `once-${Date.now()}`,
+    name: options.name || `Once ${datetimeStr}`,
+    description: userInput,
+    type: 'once' as const,
+    schedule: {
+      once: { executeAt },
+    },
+    task: {
+      userInput,
+      userId: options.user || 'default',
+    },
+    status: 'active' as const,
+    executions: [],
+    createdAt: new Date(),
+  };
+
+  const taskId = await scheduler.schedule(task);
+  console.log(`✓ One-time task scheduled: ${taskId}`);
+  console.log(`  Execute at: ${executeAt.toLocaleString('zh-CN')}`);
+  console.log(`  Task: ${userInput}`);
+}
+
+/**
+ * Create a delayed task
+ */
+async function cmdScheduleDelay(scheduler: any, args: string[], options: Record<string, any>): Promise<void> {
+  const delayStr = args[0];
+  const userInput = args.slice(1).join(' ');
+
+  if (!delayStr || !userInput) {
+    console.error('Error: Delay and task description required');
+    console.log('Usage: pnpm cli schedule delay <milliseconds> <task description>');
+    console.log('Examples:');
+    console.log('  pnpm cli schedule delay 60000 "Check status in 1 minute"');
+    console.log('  pnpm cli schedule delay 3600000 "Run hourly report"');
+    return;
+  }
+
+  const delayMs = parseInt(delayStr);
+  if (isNaN(delayMs) || delayMs <= 0) {
+    console.error('Error: Invalid delay. Use positive number in milliseconds');
+    return;
+  }
+
+  const task = {
+    id: `delay-${Date.now()}`,
+    name: options.name || `Delay ${delayMs}ms`,
+    description: userInput,
+    type: 'delay' as const,
+    schedule: {
+      delay: { delayMs },
+    },
+    task: {
+      userInput,
+      userId: options.user || 'default',
+    },
+    status: 'active' as const,
+    executions: [],
+    createdAt: new Date(),
+  };
+
+  const taskId = await scheduler.schedule(task);
+  console.log(`✓ Delayed task scheduled: ${taskId}`);
+  console.log(`  Delay: ${delayMs}ms (${(delayMs / 1000).toFixed(1)}s)`);
+  console.log(`  Task: ${userInput}`);
+}
+
+/**
+ * List all scheduled tasks
+ */
+async function cmdScheduleList(scheduler: any): Promise<void> {
+  const tasks = await scheduler.listTasks();
+
+  console.log('\n=== Scheduled Tasks ===\n');
+
+  if (tasks.length === 0) {
+    console.log('No scheduled tasks.\n');
+    return;
+  }
+
+  for (const task of tasks) {
+    const statusEmojis: Record<string, string> = {
+      active: '\x1b[32m●\x1b[0m',
+      paused: '\x1b[33m⏸\x1b[0m',
+      completed: '\x1b[36m✓\x1b[0m',
+      pending: '\x1b[34m○\x1b[0m',
+      failed: '\x1b[31m✗\x1b[0m',
+    };
+    const statusEmoji = statusEmojis[task.status] || '○';
+
+    console.log(`${statusEmoji} ${task.id} - ${task.name}`);
+    console.log(`   Type: ${task.type}`);
+    console.log(`   Status: ${task.status}`);
+    console.log(`   Task: ${task.task.userInput.substring(0, 50)}...`);
+
+    if (task.nextRunAt) {
+      console.log(`   Next run: ${new Date(task.nextRunAt).toLocaleString('zh-CN')}`);
+    }
+    if (task.lastRunAt) {
+      console.log(`   Last run: ${new Date(task.lastRunAt).toLocaleString('zh-CN')}`);
+    }
+
+    console.log(`   Created: ${new Date(task.createdAt).toLocaleString('zh-CN')}`);
+    console.log(`   Executions: ${task.executions.length}`);
+    console.log();
+  }
+}
+
+/**
+ * Cancel a scheduled task
+ */
+async function cmdScheduleCancel(scheduler: any, taskId: string): Promise<void> {
+  const cancelled = await scheduler.cancel(taskId);
+  if (cancelled) {
+    console.log(`✓ Task cancelled: ${taskId}`);
+  } else {
+    console.error(`✗ Task not found: ${taskId}`);
+  }
+}
+
+/**
+ * Pause a scheduled task
+ */
+async function cmdSchedulePause(scheduler: any, taskId: string): Promise<void> {
+  const paused = await scheduler.pause(taskId);
+  if (paused) {
+    console.log(`✓ Task paused: ${taskId}`);
+  } else {
+    console.error(`✗ Failed to pause task: ${taskId}`);
+  }
+}
+
+/**
+ * Resume a paused task
+ */
+async function cmdScheduleResume(scheduler: any, taskId: string): Promise<void> {
+  const resumed = await scheduler.resume(taskId);
+  if (resumed) {
+    console.log(`✓ Task resumed: ${taskId}`);
+  } else {
+    console.error(`✗ Failed to resume task: ${taskId}`);
+  }
+}
+
+/**
+ * Show execution history for a task
+ */
+async function cmdScheduleExecutions(scheduler: any, taskId: string, limit: number): Promise<void> {
+  const executions = await scheduler.getExecutions(taskId, limit);
+  const task = await scheduler.getTask(taskId);
+
+  console.log(`\n=== Execution History: ${taskId} ===\n`);
+
+  if (!task) {
+    console.error(`Task not found: ${taskId}\n`);
+    return;
+  }
+
+  console.log(`Task: ${task.task.userInput.substring(0, 60)}...\n`);
+
+  if (executions.length === 0) {
+    console.log('No executions yet.\n');
+    return;
+  }
+
+  for (const exec of executions) {
+    const statusEmojis: Record<string, string> = {
+      success: '\x1b[32m✓\x1b[0m',
+      failed: '\x1b[31m✗\x1b[0m',
+      running: '\x1b[33m●\x1b[0m',
+    };
+    const statusEmoji = statusEmojis[exec.status] || '?';
+
+    console.log(`${statusEmoji} ${exec.runId}`);
+    console.log(`   Started: ${new Date(exec.startedAt).toLocaleString('zh-CN')}`);
+    if (exec.completedAt) {
+      const duration = exec.completedAt.getTime() - exec.startedAt.getTime();
+      console.log(`   Completed: ${new Date(exec.completedAt).toLocaleString('zh-CN')} (${duration}ms)`);
+    }
+    console.log(`   Status: ${exec.status}`);
+    if (exec.error) {
+      console.log(`   Error: ${exec.error}`);
+    }
+    console.log();
+  }
+}
+
+/**
+ * Show detailed info for a task
+ */
+async function cmdScheduleInfo(scheduler: any, taskId: string): Promise<void> {
+  const task = await scheduler.getTask(taskId);
+
+  if (!task) {
+    console.error(`Task not found: ${taskId}\n`);
+    return;
+  }
+
+  console.log(`\n=== Task: ${taskId} ===\n`);
+  console.log(`Name: ${task.name}`);
+  console.log(`Description: ${task.description || 'N/A'}`);
+  console.log(`Type: ${task.type}`);
+  console.log(`Status: ${task.status}`);
+  console.log(`\n--- Schedule ---`);
+  console.log(JSON.stringify(task.schedule, null, 2));
+  console.log(`\n--- Task Content ---`);
+  console.log(`User Input: ${task.task.userInput}`);
+  console.log(`User ID: ${task.task.userId || 'N/A'}`);
+  console.log(`\n--- Metadata ---`);
+  console.log(`Created: ${new Date(task.createdAt).toLocaleString('zh-CN')}`);
+  if (task.nextRunAt) {
+    console.log(`Next Run: ${new Date(task.nextRunAt).toLocaleString('zh-CN')}`);
+  }
+  if (task.lastRunAt) {
+    console.log(`Last Run: ${new Date(task.lastRunAt).toLocaleString('zh-CN')}`);
+  }
+  if (task.completedAt) {
+    console.log(`Completed: ${new Date(task.completedAt).toLocaleString('zh-CN')}`);
+  }
+  console.log(`Total Executions: ${task.executions.length}`);
+  console.log();
+}
+
+/**
  * Run tests
  */
 async function cmdTest(_args: string[]): Promise<void> {
   console.log('Running tests...');
   // Would trigger vitest here
   console.log('Tests not implemented yet');
+}
+
+/**
+ * Start API server
+ */
+async function cmdServe(_args: string[], options: Record<string, any>): Promise<void> {
+  const { getAPIServer } = await import('./api/server.js');
+
+  const config = {
+    host: options.host || process.env.API_HOST || '0.0.0.0',
+    port: parseInt(options.port || process.env.API_PORT || '3000'),
+    logger: true,
+  };
+
+  const server = getAPIServer(config);
+  await server.initialize();
+
+  console.log('\n=== NexusAgent-Cluster API Server ===');
+  console.log(`Server: http://${config.host}:${config.port}`);
+  console.log(`Health: http://${config.host}:${config.port}/health`);
+  console.log(`WebSocket: ws://${config.host}:${config.port}/ws`);
+  console.log('\nAPI Endpoints:');
+  console.log(`  POST   /api/v1/tasks/submit      - Submit a task`);
+  console.log(`  GET    /api/v1/tasks/:taskId       - Get task status`);
+  console.log(`  DELETE /api/v1/tasks/:taskId       - Cancel a task`);
+  console.log(`  GET    /api/v1/sessions/:id/tasks - Get session tasks`);
+  console.log(`  GET    /api/v1/skills            - List all skills`);
+  console.log(`  GET    /api/v1/skills/:name       - Get skill info`);
+  console.log(`  GET    /api/v1/agents            - List active agents`);
+  console.log(`  WS     /ws                       - WebSocket connection`);
+  console.log('\nPress Ctrl+C to stop\n');
+
+  await server.start();
 }
 
 /**
@@ -882,8 +1478,21 @@ Commands:
   skill enable <name>    Enable a skill
   skill disable <name>   Disable a skill
   skill test <name>      Test a skill execution
+  user profile           Show user profile
+  user preferences       Show/update user preferences
+  user history           Show user interaction history
+  user stats             Show user statistics
+  schedule cron          Create a cron scheduled task
+  schedule once          Create a one-time scheduled task
+  schedule delay         Create a delayed task
+  schedule list          List all scheduled tasks
+  schedule cancel        Cancel a scheduled task
+  schedule pause         Pause a scheduled task
+  schedule resume        Resume a paused task
+  schedule executions    Show execution history
   test                   Run tests
   clean                  Clean Redis data
+  serve                  Start API server
   help                   Show this help message
 
 Examples:
@@ -894,6 +1503,12 @@ Examples:
   pnpm cli skills search "code"
   pnpm cli skill info code-generation
   pnpm cli skill test file-ops
+  pnpm cli user profile          Show user profile
+  pnpm cli user stats            Show user statistics
+  pnpm cli schedule cron "0 9 * * *" "Run daily report"
+  pnpm cli schedule delay 60000 "Check in 1 minute"
+  pnpm cli schedule list
+  pnpm cli serve                 Start API server
 
 Interactive Commands (in chat mode):
   /status                Show system status
@@ -911,12 +1526,26 @@ Options:
   skill test:
     --params <json>   Test with custom parameters (JSON string)
 
+  user commands:
+    --user, -u <id>   User ID (default: "default")
+
+  schedule commands:
+    --name <name>     Task name
+    --user <id>       User ID (default: "default")
+    --timezone <tz>   Timezone (default: "Asia/Shanghai")
+
+  serve commands:
+    --host <address>  Host to bind to (default: 0.0.0.0)
+    --port <number>   Port to listen on (default: 3000)
+
 Environment:
   ZHIPU_API_KEY       Zhipu AI API key
   DEEPSEEK_API_KEY    DeepSeek API key
   OPENAI_API_KEY      OpenAI API key
   REDIS_URL           Redis connection URL
   LOG_LEVEL           Logging level (debug, info, warn, error)
+  API_HOST            API server host (default: 0.0.0.0)
+  API_PORT            API server port (default: 3000)
 `);
 }
 
