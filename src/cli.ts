@@ -132,6 +132,10 @@ async function executeCommand(cli: CLIOptions): Promise<void> {
       await cmdServe(cli.args, cli.options);
       break;
 
+    case 'gateway':
+      await cmdGateway(cli.args, cli.options);
+      break;
+
     case 'clean':
       await cmdClean();
       break;
@@ -1630,6 +1634,54 @@ async function cmdClean(): Promise<void> {
 }
 
 /**
+ * Start Gateway server (WebSocket gateway inspired by clawdbot)
+ */
+async function cmdGateway(_args: string[], options: Record<string, any>): Promise<void> {
+  const { getGatewayServer } = await import('./gateway/GatewayServer.js');
+
+  const config = {
+    host: options.host || process.env.GATEWAY_HOST || '127.0.0.1',
+    port: parseInt(options.port || process.env.GATEWAY_PORT || '18789'),
+  };
+
+  const gateway = getGatewayServer(config);
+  await gateway.start();
+
+  console.log('\n=== NexusAgent-Cluster Gateway Server ===');
+  console.log(`WebSocket: ws://${config.host}:${config.port}/ws`);
+  console.log('\nGateway Features:');
+  console.log(`  Real-time WebSocket communication`);
+  console.log(`  Streaming response support`);
+  console.log(`  Multi-platform session management`);
+  console.log(`  Health monitoring`);
+  console.log('\nWebSocket Event Types:');
+  console.log(`  lifecycle - Run lifecycle events (start/end)`);
+  console.log(`  assistant - Streaming text output`);
+  console.log(`  chat      - Chat completion events`);
+  console.log(`  tick      - Periodic keep-alive (30s)`);
+  console.log(`  health    - Health status (60s)`);
+  console.log('\nMessage Format:');
+  console.log(`  {"type": "chat", "content": "Your message", "userId": "user123"}`);
+  console.log('\nPress Ctrl+C to stop\n');
+
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('\n\nShutting down gateway...');
+    await gateway.stop();
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', async () => {
+    console.log('\n\nShutting down gateway...');
+    await gateway.stop();
+    process.exit(0);
+  });
+
+  // Keep process running
+  await new Promise(() => {});
+}
+
+/**
  * Print help message
  */
 function printHelp(): void {
@@ -1668,6 +1720,7 @@ Commands:
   test                   Run tests
   clean                  Clean Redis data
   serve                  Start API server
+  gateway                Start WebSocket gateway (clawdbot-style)
   help                   Show this help message
 
 Examples:
@@ -1690,6 +1743,7 @@ Examples:
   pnpm cli schedule delay 60000 "Check in 1 minute"
   pnpm cli schedule list
   pnpm cli serve                 Start API server
+  pnpm cli gateway               Start WebSocket gateway
 
 Interactive Commands (in chat mode):
   /status                Show system status
