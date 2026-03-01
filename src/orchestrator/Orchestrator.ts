@@ -13,6 +13,8 @@ import { getSessionStore } from '../state/SessionStore.js';
 import { AgentFactory } from '../agents/AgentFactory.js';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
+import { getOrLoadUserProfile } from '../state/UserProfile.js';
+import { getTaskScheduler } from '../scheduler/Scheduler.js';
 
 const logger = getLogger('Orchestrator');
 
@@ -41,6 +43,7 @@ export class Orchestrator {
   private eventBus: ReturnType<typeof getEventBus>;
   private blackboard: ReturnType<typeof getBlackboard>;
   private sessionStore: ReturnType<typeof getSessionStore>;
+  private taskScheduler: ReturnType<typeof getTaskScheduler>;
   private initialized: boolean = false;
 
   constructor(config: OrchestratorConfig = {}) {
@@ -54,6 +57,7 @@ export class Orchestrator {
     this.eventBus = getEventBus();
     this.blackboard = getBlackboard();
     this.sessionStore = getSessionStore();
+    this.taskScheduler = getTaskScheduler();
 
     logger.info('Orchestrator created');
   }
@@ -71,6 +75,7 @@ export class Orchestrator {
       await this.blackboard.initialize();
       await this.eventBus.initialize();
       await this.sessionStore.ensureDirectories();
+      await this.taskScheduler.initialize();
       this.initialized = true;
       logger.info('Orchestrator initialized successfully');
     } catch (error: any) {
@@ -84,6 +89,8 @@ export class Orchestrator {
    */
   async processRequest(request: ProcessRequest): Promise<any> {
     const { sessionId, userInput, context = {} } = request;
+    const userId = context.userId || context.scheduledTaskId ? 'scheduled' : 'default';
+    const startTime = Date.now();
 
     if (!this.initialized) {
       throw new Error('Orchestrator not initialized. Call initialize() first.');
@@ -92,13 +99,16 @@ export class Orchestrator {
     // 修复编码问题（主要针对 Windows 命令行）
     const fixedInput = this.fixEncoding(userInput);
 
-    logger.info({ sessionId, userInput: fixedInput.substring(0, 100) }, 'Processing request');
+    logger.info({ sessionId, userId, userInput: fixedInput.substring(0, 100) }, 'Processing request');
 
     try {
+      // 0. Load user profile (non-blocking for performance)
+      const userProfile = await getOrLoadUserProfile(userId);
+
       // 1. Ensure session exists in SessionStore
       const metadata = await this.sessionStore.getMetadata(sessionId);
       if (!metadata) {
-        await this.sessionStore.createSession(sessionId, context);
+        await this.sessionStore.createSession(sessionId, { ...context, userId });
       }
 
       // 2. Add user input to session
@@ -132,9 +142,43 @@ export class Orchestrator {
       // 9. Update session status
       await this.sessionStore.updateStatus(sessionId, result.success ? 'completed' : 'failed');
 
+      // 10. Record user interaction (non-blocking)
+      const executionTime = Date.now() - startTime;
+
+      // Extract agent and skill info from results
+      // Get agent type from DAG tasks or use default
+      const dagTasks = dag.getAllTasks();
+      const agentUsed = dagTasks.length > 0 ? dagTasks[0].agentType : 'GenericAgent';
+
+      const skillsUsed: string[] = [];
+      if (result.data?.tasks) {
+        for (const task of result.data.tasks) {
+          if (task.skillUsed && !skillsUsed.includes(task.skillUsed)) {
+            skillsUsed.push(task.skillUsed);
+          }
+        }
+      }
+
+      // Record interaction asynchronously
+      setImmediate(async () => {
+        try {
+          await userProfile.recordInteraction({
+            sessionId,
+            timestamp: new Date(),
+            userInput: fixedInput,
+            agentUsed,
+            skillsUsed,
+            executionTime,
+            success: result.success,
+          });
+        } catch (error: any) {
+          logger.warn({ error: error.message }, 'Failed to record user interaction');
+        }
+      });
+
       await this.eventBus.publish(EventType.SESSION_COMPLETED, { sessionId, result });
 
-      logger.info({ sessionId }, 'Request processed successfully');
+      logger.info({ sessionId, executionTime }, 'Request processed successfully');
       return result;
     } catch (error: any) {
       logger.error({ sessionId, error: error.message }, 'Request processing failed');
@@ -269,6 +313,13 @@ export class Orchestrator {
   }
 
   /**
+   * Get task scheduler
+   */
+  getTaskScheduler() {
+    return this.taskScheduler;
+  }
+
+  /**
    * Shutdown the orchestrator
    */
   async shutdown(): Promise<void> {
@@ -276,6 +327,7 @@ export class Orchestrator {
 
     try {
       await this.scheduler.cancelAll();
+      await this.taskScheduler.shutdown();
       await this.blackboard.close();
       await this.llm.close();
       this.initialized = false;
