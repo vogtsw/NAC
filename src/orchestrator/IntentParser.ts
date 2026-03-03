@@ -40,6 +40,7 @@ export class IntentParser {
         complexity: parsed.complexity,
         estimatedSteps: parsed.estimated_steps,
         constraints: parsed.constraints || [],
+        conversationType: parsed.conversation_type,
       };
 
       logger.info(
@@ -84,6 +85,7 @@ export class IntentParser {
       analysis: 2,
       deployment: 5,
       other: 1,
+      conversation: 0,
     };
     return weights[type] || 1;
   }

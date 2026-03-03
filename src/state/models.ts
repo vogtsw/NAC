@@ -4,12 +4,13 @@
  */
 
 export interface Intent {
-  type: 'code' | 'data' | 'automation' | 'analysis' | 'deployment' | 'other';
+  type: 'code' | 'data' | 'automation' | 'analysis' | 'deployment' | 'other' | 'conversation';
   primaryGoal: string;
   capabilities: string[];
   complexity: 'simple' | 'medium' | 'complex';
   estimatedSteps: number;
   constraints: string[];
+  conversationType?: 'greeting' | 'thanks' | 'farewell' | 'chat' | 'help';
 }
 
 export interface Task {

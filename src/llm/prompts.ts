@@ -4,19 +4,39 @@
  */
 
 export const IntentAnalysisPrompt = {
-  format: (userInput: string) => `你是一个专业的任务分析助手。请分析用户输入的意图，提取关键信息。
+  format: (userInput: string) => `你是一个专业的个人AI助手。请分析用户输入的意图，提取关键信息。
 
 用户输入：${userInput}
 
-请以JSON格式返回分析结果，包含以下字段：
-1. intent_type: 意图类型（code, data, automation, analysis, deployment, other）
-2. primary_goal: 主要目标描述
-3. required_capabilities: 所需能力列表
-4. complexity: 复杂度评估（simple, medium, complex）
-5. estimated_steps: 预估执行步骤数
-6. constraints: 约束条件列表
+请首先判断这是否为以下类型的对话输入：
+- 问候语：如"你好"、"嗨"、"hello"、"hi"等
+- 感谢语：如"谢谢"、"感谢"等
+- 道别语：如"再见"、"拜拜"等
+- 简单闲聊：如天气、心情等非任务性对话
+- 系统命令：如"帮助"、"你能做什么"等功能咨询
 
-返回格式示例：
+如果是上述对话类型，请返回：
+{
+  "intent_type": "conversation",
+  "primary_goal": "用户意图的简要描述",
+  "required_capabilities": [],
+  "complexity": "simple",
+  "estimated_steps": 0,
+  "constraints": [],
+  "conversation_type": "greeting|thanks|farewell|chat|help"
+}
+
+如果是任务请求，请以JSON格式返回分析结果，包含以下字段：
+{
+  "intent_type": "code|data|automation|analysis|deployment|other",
+  "primary_goal": "主要目标描述",
+  "required_capabilities": ["所需能力列表"],
+  "complexity": "simple|medium|complex",
+  "estimated_steps": 预估步骤数,
+  "constraints": ["约束条件列表"]
+}
+
+返回格式示例（任务）：
 {
   "intent_type": "code",
   "primary_goal": "实现一个RESTful API",

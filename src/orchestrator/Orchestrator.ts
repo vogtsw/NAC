@@ -123,6 +123,47 @@ export class Orchestrator {
       const intent = await this.intentParser.parse(fixedInput);
       await this.eventBus.publish(EventType.SESSION_UPDATED, { sessionId, intent });
 
+      // 3.5. Handle conversation intents (greetings, chat, etc.) - skip DAG
+      if (intent.type === 'conversation') {
+        const conversationResponse = await this.handleConversation(intent, fixedInput, userProfile);
+
+        // Add response to session
+        await this.sessionStore.addMessage(sessionId, 'assistant', conversationResponse);
+        await this.sessionStore.updateStatus(sessionId, 'completed');
+
+        // Record interaction for conversation type
+        const executionTime = Date.now() - startTime;
+        setImmediate(async () => {
+          try {
+            await userProfile.recordInteraction({
+              sessionId,
+              timestamp: new Date(),
+              userInput: fixedInput,
+              agentUsed: 'GenericAgent',
+              skillsUsed: [],
+              executionTime,
+              success: true,
+            });
+          } catch (error: any) {
+            logger.warn({ error: error.message }, 'Failed to record user interaction');
+          }
+        });
+
+        await this.eventBus.publish(EventType.SESSION_COMPLETED, { sessionId, result: { success: true, data: { response: conversationResponse } } });
+        logger.info({ sessionId, executionTime }, 'Conversation handled successfully');
+
+        return {
+          success: true,
+          data: {
+            response: conversationResponse,
+            summary: {
+              totalTasks: 0,
+              totalDuration: executionTime,
+            },
+          },
+        };
+      }
+
       // 4. Build DAG
       const dag = await this.dagBuilder.build(intent);
       logger.info({ taskCount: dag.getAllTasks().length }, 'DAG built');
@@ -215,6 +256,52 @@ export class Orchestrator {
       await this.eventBus.publish(EventType.SESSION_FAILED, { sessionId, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Handle conversation intents (greetings, chat, etc.)
+   * Returns a simple conversational response without DAG execution
+   */
+  private async handleConversation(intent: any, _userInput: string, userProfile: any): Promise<string> {
+    const conversationType = intent.conversationType || 'chat';
+
+    // Get user preferences for personalized responses (currently unused but available for future personalization)
+    userProfile.getPreferences();
+
+    // Response templates based on conversation type
+    const responses: Record<string, string[]> = {
+      greeting: [
+        `您好！很高兴为您服务。我是您的个人AI助手，可以帮您完成各种工作任务，比如：\n- 编写代码和程序\n- 数据分析和处理\n- 文档编写和分析\n- 自动化任务执行\n\n请告诉我您需要什么帮助？`,
+        `嗨！我是您的AI助手。无论您需要编程、数据分析还是其他工作协助，我都很乐意帮忙。今天有什么可以帮您的吗？`,
+        `你好！我是您的个人AI助手，随时准备协助您完成工作。我可以处理代码、数据、文档等各种任务。请随时告诉我您的需求。`,
+      ],
+      thanks: [
+        `不客气！很高兴能帮到您。如果还有其他问题，随时告诉我！`,
+        `不用谢！这是我的荣幸。还有其他我能帮忙的地方吗？`,
+        `随时为您服务！如果还有什么需要，请尽管开口。`,
+      ],
+      farewell: [
+        `再见！祝您工作顺利，期待下次为您服务！`,
+        `拜拜！祝您有个愉快的一天！`,
+        `再见！有需要随时找我！`,
+      ],
+      chat: [
+        `我明白了！作为一个AI助手，我随时准备协助您处理各种工作和任务。有什么具体需要帮助的吗？`,
+        `好的！我在这里听您吩咐。请告诉我您想要完成什么任务？`,
+        `收到！作为您的个人助手，我会尽力协助您。请提出您的具体需求吧。`,
+      ],
+      help: [
+        `我是您的个人AI助手，可以帮您完成以下工作：\n\n📝 代码开发\n- 编写各类编程语言代码\n- 代码审查和优化建议\n- 调试和问题排查\n\n📊 数据处理\n- 数据分析和可视化\n- 数据清洗和转换\n- 统计分析\n\n📄 文档处理\n- 文档编写和编辑\n- 内容分析和总结\n- 格式转换\n\n🤖 自动化任务\n- 工作流自动化\n- 批量操作\n- 定时任务调度\n\n请告诉我您想做什么，我会智能匹配最合适的Agent来帮您完成！`,
+      ],
+    };
+
+    // Get response templates for this type
+    const typeResponses = responses[conversationType] || responses.chat;
+
+    // Select a response (can be random or based on user history)
+    const responseIndex = Math.floor(Math.random() * typeResponses.length);
+
+    return typeResponses[responseIndex];
   }
 
   /**
