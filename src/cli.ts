@@ -224,7 +224,12 @@ async function cmdChat(): Promise<void> {
     });
 
     // 检查命令
-    const trimmedInput = userInput.trim();
+    let trimmedInput = userInput.trim();
+
+    // 修复 Windows 命令行编码问题
+    if (process.platform === 'win32' && trimmedInput) {
+      trimmedInput = fixEncoding(trimmedInput);
+    }
 
     if (!trimmedInput) {
       continue;
