@@ -105,6 +105,30 @@ export class Orchestrator {
 
     logger.info({ sessionId, userId, userInput: fixedInput.substring(0, 100) }, 'Processing request');
 
+    // 快速检测：如果输入看起来是乱码或非常短的输入，直接作为对话处理
+    // 这避免了因编码问题导致的复杂任务分析
+    const quickConversationResponse = this.detectQuickConversation(fixedInput, userInput);
+    if (quickConversationResponse) {
+      await this.sessionStore.createSession(sessionId, { ...context, userId });
+      await this.sessionStore.addMessage(sessionId, 'user', fixedInput);
+      await this.sessionStore.addMessage(sessionId, 'assistant', quickConversationResponse);
+      await this.sessionStore.updateStatus(sessionId, 'completed');
+
+      const executionTime = Date.now() - startTime;
+      logger.info({ sessionId, executionTime }, 'Quick conversation handled');
+
+      return {
+        success: true,
+        data: {
+          response: quickConversationResponse,
+          summary: {
+            totalTasks: 0,
+            totalDuration: executionTime,
+          },
+        },
+      };
+    }
+
     try {
       // 0. Load user profile (non-blocking for performance)
       const userProfile = await getOrLoadUserProfile(userId);
@@ -256,6 +280,43 @@ export class Orchestrator {
       await this.eventBus.publish(EventType.SESSION_FAILED, { sessionId, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * 快速检测简单对话输入（避免因编码问题调用LLM）
+   * 检测乱码、极短输入等，直接返回友好回应
+   */
+  private detectQuickConversation(fixedInput: string, originalInput: string): string | null {
+    // 检测1：极短输入（可能是乱码的中文问候）
+    if (fixedInput.length <= 3) {
+      // 检查是否只包含特殊字符或乱码特征
+      const hasGarbageChars = /[\u0000-\u001F\uFFFd\ufffd}`{}\[\]\\]/.test(fixedInput);
+      if (hasGarbageChars || fixedInput.length === 0) {
+        // 很可能是中文输入被编码破坏，返回友好问候
+        return `您好！很高兴为您服务。我是您的个人AI助手，可以帮您完成各种工作任务，比如：\n- 编写代码和程序\n- 数据分析和处理\n- 文档编写和分析\n- 自动化任务执行\n\n请告诉我您需要什么帮助？`;
+      }
+    }
+
+    // 检测2：原始输入包含中文字符但fixedInput很短（编码问题）
+    const hasChineseOriginal = /[\u4e00-\u9fa5]/.test(originalInput);
+    if (hasChineseOriginal && fixedInput.length <= 3 && fixedInput !== originalInput) {
+      return `您好！很高兴为您服务。我是您的个人AI助手，可以帮您完成各种工作任务，比如：\n- 编写代码和程序\n- 数据分析和处理\n- 文档编写和分析\n- 自动化任务执行\n\n请告诉我您需要什么帮助？`;
+    }
+
+    // 检测3：已知的简单问候模式（即使编码正确）
+    const greetings = ['hi', 'hello', 'hey', '嗨', '你好'];
+    const lowerInput = fixedInput.toLowerCase().trim();
+    if (greetings.some(g => lowerInput === g || lowerInput.startsWith(g))) {
+      return `你好！我是您的个人AI助手，随时准备协助您完成工作。我可以处理代码、数据、文档等各种任务。请随时告诉我您的需求。`;
+    }
+
+    // 检测4：帮助请求
+    const helpPatterns = ['help', '帮助', '你能做什么', 'what can you do'];
+    if (helpPatterns.some(h => lowerInput.includes(h))) {
+      return `我是您的个人AI助手，可以帮您完成以下工作：\n\n📝 代码开发\n- 编写各类编程语言代码\n- 代码审查和优化建议\n- 调试和问题排查\n\n📊 数据处理\n- 数据分析和可视化\n- 数据清洗和转换\n- 统计分析\n\n📄 文档处理\n- 文档编写和编辑\n- 内容分析和总结\n- 格式转换\n\n🤖 自动化任务\n- 工作流自动化\n- 批量操作\n- 定时任务调度\n\n请告诉我您想做什么，我会智能匹配最合适的Agent来帮您完成！`;
+    }
+
+    return null;
   }
 
   /**
