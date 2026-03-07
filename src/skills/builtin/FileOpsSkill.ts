@@ -4,7 +4,7 @@
  */
 
 import { Skill, SkillCategory, SkillContext, SkillResult } from '../types.js';
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import { join, dirname } from 'path';
 
 export const FileOpsSkill: Skill = {
@@ -41,6 +41,29 @@ export const FileOpsSkill: Skill = {
           return {
             success: true,
             result: { path, bytesWritten: content.length },
+          };
+        }
+
+        case 'modify': {
+          // Read file, replace content, write back
+          if (!existsSync(path)) {
+            return {
+              success: false,
+              error: `File not found: ${path}`,
+            };
+          }
+
+          let fileContent = await fs.readFile(path, encoding as BufferEncoding);
+          const { search = '', replace = '' } = params;
+
+          if (search) {
+            fileContent = fileContent.replace(new RegExp(search, 'g'), replace);
+          }
+
+          await fs.writeFile(path, fileContent, encoding as BufferEncoding);
+          return {
+            success: true,
+            result: { path, search, replace, bytesModified: fileContent.length },
           };
         }
 
