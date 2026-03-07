@@ -26,7 +26,17 @@ export const IntentAnalysisPrompt = {
   "conversation_type": "greeting|thanks|farewell|chat|help"
 }
 
-如果是任务请求，请以JSON格式返回分析结果，包含以下字段：
+如果用户输入包含搜索意图（如"search"、"搜索"、"查找"、"google"、"百度"、"新闻"、"news"等关键词），请返回：
+{
+  "intent_type": "automation",
+  "primary_goal": "执行搜索或信息检索",
+  "required_capabilities": ["web-search", "information-retrieval"],
+  "complexity": "simple",
+  "estimated_steps": 1,
+  "constraints": []
+}
+
+如果是其他任务请求，请以JSON格式返回分析结果，包含以下字段：
 {
   "intent_type": "code|data|automation|analysis|deployment|other",
   "primary_goal": "主要目标描述",
