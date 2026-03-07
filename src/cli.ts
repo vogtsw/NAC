@@ -19,17 +19,38 @@ interface CLIOptions {
 
 // 修复 Windows 命令行中文编码问题
 function fixEncoding(text: string): string {
-  // 检测是否是乱码（如果包含替换字符则可能是编码问题）
-  if (text.includes('') || text.includes('')) {
-    // 尝试使用 iconv-lite 或其他方法修复
-    // 这里简单地用 Buffer 重新编码
+  if (!text) return text;
+
+  // 检测是否包含乱码特征
+  const hasGarbage = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFD]/.test(text);
+
+  if (hasGarbage) {
+    // 移除控制字符和替换字符
+    text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFD]/g, '');
+  }
+
+  // 尝试检测常见的编码错误模式
+  // 如果文本中有很多连续的高位字节但中文字符很少，可能是编码问题
+  const highByteCount = (text.match(/[\x80-\xFF]/g) || []).length;
+  const chineseCharCount = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+
+  // 如果有很多高位字节但很少中文字符，尝试重新编码
+  if (highByteCount > 3 && chineseCharCount < highByteCount / 2) {
     try {
+      // 尝试 Latin1 → UTF8 转换
       const buffer = Buffer.from(text, 'latin1');
-      return buffer.toString('utf8');
+      const decoded = buffer.toString('utf8');
+
+      // 验证转换后的文本是否更合理
+      const newChineseCount = (decoded.match(/[\u4e00-\u9fa5]/g) || []).length;
+      if (newChineseCount > chineseCharCount) {
+        return decoded;
+      }
     } catch {
-      return text;
+      // 转换失败，返回原文本
     }
   }
+
   return text;
 }
 
@@ -160,11 +181,23 @@ async function cmdChat(): Promise<void> {
   const getBlackboard = (await import('./state/Blackboard.js')).getBlackboard;
   const getSkillManager = (await import('./skills/SkillManager.js')).getSkillManager;
   const loadConfig = (await import('./config/index.js')).loadConfig;
+  const { execSync } = await import('child_process');
 
   const config = loadConfig();
   const orchestrator = getOrchestrator();
   const blackboard = getBlackboard();
   const skillManager = getSkillManager();
+
+  // Windows: 设置控制台为 UTF-8 编码
+  if (process.platform === 'win32') {
+    try {
+      execSync('chcp 65001 > nul 2>&1', { stdio: 'ignore' });
+      // 设置环境变量
+      process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+    } catch (e) {
+      // 忽略 chcp 错误
+    }
+  }
 
   // 初始化
   await orchestrator.initialize();
@@ -173,6 +206,7 @@ async function cmdChat(): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
+    // 移除 completer 以避免干扰
   });
 
   // 生成会话 ID
@@ -216,15 +250,55 @@ async function cmdChat(): Promise<void> {
   // 历史记录
   const history: string[] = [];
   let taskCount = 0;
+  let isShuttingDown = false;
+
+  // 添加信号处理器
+  const shutdown = async (signal: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    console.log(`\n\n收到 ${signal} 信号，正在关闭...`);
+
+    try {
+      rl.close();
+      await orchestrator.shutdown();
+      console.log('\x1b[1;32m✓ 已安全退出\x1b[0m\n');
+    } catch (error: any) {
+      console.error('\x1b[1;31m✗ 关闭时出错:\x1b[0m', error.message);
+    }
+
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   // 主循环
-  while (true) {
+  while (!isShuttingDown) {
     const userInput = await new Promise<string>((resolve) => {
-      rl.question('\x1b[1;36mYou>\x1b[0m ', (answer) => resolve(answer));
+      rl.question('\x1b[1;36mYou>\x1b[0m ', (answer) => {
+        // 检查 readline 是否已关闭
+        if (rl.closed) {
+          isShuttingDown = true;
+          resolve('');
+        } else {
+          resolve(answer);
+        }
+      });
     });
 
+    // 检查是否正在关闭
+    if (isShuttingDown || rl.closed) {
+      break;
+    }
+
     // 检查命令
-    let trimmedInput = userInput.trim();
+    let trimmedInput = userInput?.trim() || '';
+
+    // 空输入跳过
+    if (!trimmedInput) {
+      continue;
+    }
 
     // 修复 Windows 命令行编码问题
     if (process.platform === 'win32' && trimmedInput) {
@@ -355,14 +429,26 @@ async function cmdChat(): Promise<void> {
 
       // 显示结果
       if (result.success) {
-        // 优先显示响应文本
-        if (result.data?.response) {
-          console.log(result.data.response);
+        // 尝试多种方式显示结果
+        const responseText = result.data?.response || result.response || result.data?.output || result.data?.answer;
+
+        if (responseText) {
+          // 如果有文本响应，直接显示
+          console.log(String(responseText));
         } else if (result.data?.tasks && result.data.tasks.length > 0) {
-          // 如果没有 response 字段，显示任务结果
-          console.log(JSON.stringify(result.data, null, 2));
+          // 如果没有 response 字段，显示任务结果摘要
+          console.log('\n\x1b[1;33m任务完成摘要:\x1b[0m');
+          for (const task of result.data.tasks) {
+            const status = task.success ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+            console.log(`  ${status} ${task.name || task.id}`);
+            if (task.result) {
+              const resultPreview = JSON.stringify(task.result).substring(0, 100);
+              console.log(`     ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`);
+            }
+          }
         } else {
-          console.log(JSON.stringify(result.data, null, 2));
+          // 其他情况显示完整数据
+          console.log(JSON.stringify(result.data || result, null, 2));
         }
         console.log(`\n\x1b[1;32m✓ 完成 (${(elapsed / 1000).toFixed(2)}s)\x1b[0m`);
       } else {
