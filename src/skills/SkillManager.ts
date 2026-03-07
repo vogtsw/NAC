@@ -247,7 +247,7 @@ export class SkillManager {
     const taskSkillMap: Record<string, string[]> = {
       code: ['code-generation', 'code-review', 'git-ops'],
       data: ['data-analysis', 'file-ops'],
-      automation: ['file-ops', 'terminal-exec', 'browser-auto'],
+      automation: ['web-search', 'file-ops', 'terminal-exec', 'browser-auto'],
       analysis: ['code-review', 'data-analysis'],
       testing: ['test-generation', 'test-runner'],
       deployment: ['git-ops', 'terminal-exec', 'file-ops'],
@@ -308,6 +308,7 @@ export class SkillManager {
     const { CodeReviewSkill } = await import('./builtin/CodeReviewSkill.js');
     const { DataAnalysisSkill } = await import('./builtin/DataAnalysisSkill.js');
     const { DocxProcessingSkill } = await import('./builtin/DocxProcessingSkill.js');
+    const { WebSearchSkill } = await import('./builtin/WebSearchSkill.js');
 
     this.register(CodeGenerationSkill);
     this.register(FileOpsSkill);
@@ -315,8 +316,9 @@ export class SkillManager {
     this.register(CodeReviewSkill);
     this.register(DataAnalysisSkill);
     this.register(DocxProcessingSkill);
+    this.register(WebSearchSkill);
 
-    logger.info({ count: 6 }, 'Builtin skills loaded');
+    logger.info({ count: 7 }, 'Builtin skills loaded');
   }
 
   /**

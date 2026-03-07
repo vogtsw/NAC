@@ -3,7 +3,7 @@
  * Performs web searches using DuckDuckGo (no API key required)
  */
 
-import { Skill, SkillCategory, SkillContext, SkillResult } from '../../src/skills/types.js';
+import { Skill, SkillCategory, SkillContext, SkillResult } from '../types.js';
 
 /**
  * Web Search Skill
