@@ -278,8 +278,7 @@ async function cmdChat(): Promise<void> {
     const userInput = await new Promise<string>((resolve) => {
       rl.question('\x1b[1;36mYou>\x1b[0m ', (answer) => {
         // 检查 readline 是否已关闭
-        if (rl.closed) {
-          isShuttingDown = true;
+        if (isShuttingDown) {
           resolve('');
         } else {
           resolve(answer);
@@ -288,7 +287,7 @@ async function cmdChat(): Promise<void> {
     });
 
     // 检查是否正在关闭
-    if (isShuttingDown || rl.closed) {
+    if (isShuttingDown) {
       break;
     }
 
