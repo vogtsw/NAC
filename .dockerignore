@@ -1,0 +1,71 @@
+# Docker ignore file for NAC
+# Prevents sensitive files from being copied into Docker images
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Sensitive data
+*.key
+*.pem
+*.cert
+*.crt
+secrets/
+
+# Dependencies
+node_modules/
+npm-debug.log
+pnpm-debug.log
+yarn-error.log
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (not needed in container)
+*.md
+!README.md
+docs/
+
+# Test files (not needed in production)
+tests/
+coverage/
+*.test.js
+*.spec.ts
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker files
+Dockerfile*
+docker-compose*
+.dockerignore
