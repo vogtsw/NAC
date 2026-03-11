@@ -6,6 +6,7 @@
 import OpenAI from 'openai';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
+import { scanForSensitiveData, RiskLevel } from '../security/SensitiveDataFilter.js';
 
 const logger = getLogger('LLMClient');
 
@@ -52,6 +53,39 @@ export class LLMClient {
    * Complete text generation
    */
   async complete(prompt: string, options: CompleteOptions = {}): Promise<string> {
+    // SECURITY CHECK: Scan for sensitive data before sending to external API
+    const scanResult = scanForSensitiveData(prompt);
+
+    if (scanResult.shouldBlock) {
+      logger.error({
+        riskLevel: scanResult.riskLevel,
+        detectionCount: scanResult.detections.length,
+        types: scanResult.detections.map(d => d.type)
+      }, 'Blocked content with sensitive data');
+
+      throw new Error(
+        `🔒 安全警告: 检测到敏感信息，已阻止发送到外部API\n` +
+        `风险等级: ${scanResult.riskLevel}\n` +
+        `检测到的敏感信息类型:\n` +
+        scanResult.detections.map(d => `  - ${d.type}: ${d.match.substring(0, 20)}...`).join('\n') +
+        `\n建议: 请移除敏感信息后重试，或使用环境变量/配置文件管理凭据`
+      );
+    }
+
+    if (scanResult.hasSensitiveData) {
+      logger.warn({
+        riskLevel: scanResult.riskLevel,
+        detectionCount: scanResult.detections.length,
+        types: scanResult.detections.map(d => d.type)
+      }, 'Content contains sensitive data, sanitizing');
+
+      // Use sanitized version
+      prompt = scanResult.sanitizedContent || prompt;
+
+      // Add warning about sanitization
+      logger.info('⚠️ 敏感信息已被自动脱敏处理');
+    }
+
     const messages: ChatMessage[] = [];
 
     if (options.systemPrompt) {
@@ -84,6 +118,29 @@ export class LLMClient {
    * Stream completion (async generator)
    */
   async *streamComplete(prompt: string, options: CompleteOptions = {}): AsyncGenerator<string> {
+    // SECURITY CHECK: Scan for sensitive data before sending to external API
+    const scanResult = scanForSensitiveData(prompt);
+
+    if (scanResult.shouldBlock) {
+      logger.error({
+        riskLevel: scanResult.riskLevel,
+        detectionCount: scanResult.detections.length,
+        types: scanResult.detections.map(d => d.type)
+      }, 'Blocked streaming content with sensitive data');
+
+      throw new Error(
+        `🔒 安全警告: 检测到敏感信息，已阻止发送到外部API\n` +
+        `风险等级: ${scanResult.riskLevel}\n` +
+        `检测到的敏感信息类型: ${scanResult.detections.map(d => d.type).join(', ')}\n` +
+        `\n建议: 请移除敏感信息后重试`
+      );
+    }
+
+    if (scanResult.hasSensitiveData) {
+      prompt = scanResult.sanitizedContent || prompt;
+      logger.warn('Content contains sensitive data, sanitizing for streaming');
+    }
+
     const messages: ChatMessage[] = [];
 
     if (options.systemPrompt) {
