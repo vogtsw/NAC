@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  nac:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nexus-agent-cluster:latest
+    container_name: nac-sandbox
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+    # Read-only root filesystem (except specific directories)
+    read_only: true
+    tmpfs:
+      - /tmp:nac,suid,size=100m
+      - /app/temp:size=50m
+
+    # Volume mounts (writeable directories)
+    volumes:
+      - ./src:/app/src:rw
+      - ./tests:/app/tests:rw
+      - ./docs:/app/docs:rw
+      - ./config:/app/config:ro
+      - ./memory:/app/memory:rw
+      - ./skills:/app/skills:rw
+      - nac-temp:/app/temp:rw
+      - nac-logs:/app/logs:rw
+
+    # Environment variables
+    environment:
+      - NODE_ENV=production
+      - NAC_SANDBOX_LEVEL=${NAC_SANDBOX_LEVEL:-moderate}
+      - NAC_ENABLE_AUDIT_LOG=true
+      - NAC_AUDIT_LOG_PATH=/app/logs/audit.json
+
+    # Network isolation
+    network_mode: bridge
+    networks:
+      - nac-network
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  nac-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  nac-temp:
+    driver: local
+  nac-logs:
+    driver: local
