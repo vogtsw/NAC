@@ -9,7 +9,7 @@
  */
 
 import { BaseAgent } from '../../BaseAgent.js';
-import { ExecutionContext } from '../../../state/models.js';
+import { AgentStatus } from '../../../state/models.js';
 import { promises as fs } from 'fs';
 import { resolve } from 'path';
 
@@ -30,7 +30,7 @@ export class DocumentAgent extends BaseAgent {
     output?: string;
     options?: Record<string, any>;
   }): Promise<any> {
-    this.setStatus('busy');
+    this.setStatus(AgentStatus.BUSY);
     const startTime = Date.now();
 
     try {
@@ -62,7 +62,7 @@ export class DocumentAgent extends BaseAgent {
 
       this.tasksCompleted++;
       this.totalExecutionTime += Date.now() - startTime;
-      this.setStatus('idle');
+      this.setStatus(AgentStatus.IDLE);
 
       return {
         success: true,
@@ -73,7 +73,7 @@ export class DocumentAgent extends BaseAgent {
         },
       };
     } catch (error: any) {
-      this.setStatus('error');
+      this.setStatus(AgentStatus.ERROR);
       this.logger.error({ error: error.message }, 'Document task failed');
 
       return {

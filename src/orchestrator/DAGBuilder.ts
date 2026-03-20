@@ -110,17 +110,46 @@ export class DAGBuilder {
     const steps = await this.generateSteps(intent);
 
     const dag = new DAG();
+    const mappedSkills = this.mapCapabilitiesToSkills(intent.capabilities);
+
+    // 对于 automation + web-search 类型，从 primaryGoal 中提取搜索查询
+    let extractedSearchQuery: string | undefined;
+    if (intent.type === 'automation' && mappedSkills.includes('web-search')) {
+      extractedSearchQuery = this.extractSearchQueryFromGoal(intent.primaryGoal);
+      logger.debug({ extractedSearchQuery }, 'Extracted search query from primaryGoal');
+    }
+
     steps.forEach((step: any, index: number) => {
-      // 清空技能列表，让Agent直接使用LLM执行
-      dag.addTask({
+      // 对于 automation 类型的任务，从 intent.capabilities 映射技能
+      // 如果 LLM 生成的步骤包含技能，使用 LLM 的技能；否则使用映射的技能
+      let requiredSkills: string[] = [];
+
+      if (intent.type === 'automation') {
+        // 如果步骤有定义 required_skills 且不为空，使用步骤的技能
+        if (step.required_skills && step.required_skills.length > 0) {
+          requiredSkills = step.required_skills;
+        } else if (mappedSkills.length > 0) {
+          // 否则使用从 intent.capabilities 映射的技能
+          requiredSkills = mappedSkills;
+        }
+      }
+
+      const taskData: any = {
         id: step.id || `task-${index + 1}`,
         name: step.name,
         description: step.description,
         agentType: step.agent_type || this.inferAgentType(step),
-        requiredSkills: [], // 清空技能，让Agent使用LLM
+        requiredSkills,
         dependencies: step.dependencies || [],
         estimatedDuration: step.estimated_duration || 300,
-      });
+      };
+
+      // 如果有提取的搜索查询，添加到任务中
+      if (extractedSearchQuery) {
+        taskData.searchQuery = extractedSearchQuery;
+      }
+
+      dag.addTask(taskData);
     });
 
     // Validate no cycles
@@ -207,6 +236,73 @@ export class DAGBuilder {
     }
 
     return 'GenericAgent';
+  }
+
+  /**
+   * 将 intent capabilities 映射到实际的技能名称
+   */
+  private mapCapabilitiesToSkills(capabilities: string[]): string[] {
+    const skillMapping: Record<string, string> = {
+      'web-search': 'web-search',
+      'information-retrieval': 'web-search',
+      'code_gen': 'code-generation',
+      'code-generation': 'code-generation',
+      'data-analysis': 'data-analysis',
+      'file-ops': 'file-ops',
+      'terminal-exec': 'terminal-exec',
+      'code-review': 'code-review',
+    };
+
+    const skills: string[] = [];
+    for (const cap of capabilities) {
+      const skill = skillMapping[cap.toLowerCase()];
+      if (skill) {
+        skills.push(skill);
+      }
+    }
+
+    logger.debug({ capabilities, skills }, 'Mapped capabilities to skills');
+    return skills;
+  }
+
+  /**
+   * 从 primaryGoal 中提取搜索查询
+   * primaryGoal 格式: "搜索关于 ${searchQuery} 的信息"
+   */
+  private extractSearchQueryFromGoal(primaryGoal: string): string {
+    // 移除搜索相关的前缀
+    const prefixes = [
+      '搜索关于', 'search for', 'search about', '查找',
+      'look for', '寻找', 'find'
+    ];
+
+    let query = primaryGoal;
+    for (const prefix of prefixes) {
+      if (query.toLowerCase().startsWith(prefix.toLowerCase())) {
+        query = query.substring(prefix.length).trim();
+        break;
+      }
+    }
+
+    // 移除搜索相关的后缀
+    const suffixes = [
+      ' 的信息', '的信息', ' 的新闻', ' 的最新消息', ' 的最新进展',
+      ' news', ' latest news', ' information', ' latest information'
+    ];
+
+    for (const suffix of suffixes) {
+      if (query.toLowerCase().endsWith(suffix.toLowerCase())) {
+        query = query.substring(0, query.length - suffix.length).trim();
+        break;
+      }
+    }
+
+    // 如果提取后的查询为空或太短，返回原始 primaryGoal
+    if (!query || query.length < 2) {
+      return primaryGoal;
+    }
+
+    return query;
   }
 
   /**

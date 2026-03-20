@@ -9,7 +9,7 @@ import { Intent, Task, DAGNode } from '../state/models.js';
 import { getLogger } from '../monitoring/logger.js';
 import { getSkillManager } from '../skills/SkillManager.js';
 import { AgentRouter } from './AgentRouter.js';
-import { getAgentRegistry } from './AgentRegistry.js';
+import { getLLMClient } from '../llm/LLMClient.js';
 
 const logger = getLogger('DAGBuilderV2');
 
@@ -103,9 +103,11 @@ export class DAG {
 export class DAGBuilderV2 {
   private router: AgentRouter;
   private skillManager: ReturnType<typeof getSkillManager>;
+  private llm: LLMClient;
 
-  constructor(private llm?: LLMClient) {
-    this.router = new AgentRouter(llm);
+  constructor(llm?: LLMClient) {
+    this.llm = llm || getLLMClient();
+    this.router = new AgentRouter(this.llm);
     this.skillManager = getSkillManager();
   }
 

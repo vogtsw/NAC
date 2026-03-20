@@ -267,6 +267,38 @@ export class FeedbackCollector {
   }
 
   /**
+   * Record Agent generation event (L2-16)
+   */
+  async recordAgentGeneration(record: {
+    agentType: string;
+    taskId: string;
+    configPath: string;
+    timestamp: Date;
+    sessionId?: string;
+    userId?: string;
+  }): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    try {
+      const agentGenId = `agent_gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const filePath = join(FEEDBACK_DIR, `${agentGenId}.json`);
+
+      // Save agent generation record
+      await fs.writeFile(filePath, JSON.stringify(record, null, 2));
+
+      logger.info({
+        agentGenId,
+        agentType: record.agentType,
+        sessionId: record.sessionId,
+      }, 'Agent generation recorded');
+    } catch (error: any) {
+      logger.error({ error }, 'Failed to record agent generation');
+    }
+  }
+
+  /**
    * Clean old feedback (older than specified days)
    */
   async cleanOldFeedback(daysToKeep: number = 30): Promise<number> {

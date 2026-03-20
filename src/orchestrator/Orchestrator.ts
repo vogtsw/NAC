@@ -11,6 +11,8 @@ import { getBlackboard } from '../state/Blackboard.js';
 import { getEventBus, EventType } from '../state/EventBus.js';
 import { getSessionStore } from '../state/SessionStore.js';
 import { AgentFactory } from '../agents/AgentFactory.js';
+import { AgentGenerator } from '../agents/AgentGenerator.js';
+import { getAgentRegistry } from './AgentRegistry.js';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
 import { getOrLoadUserProfile } from '../state/UserProfile.js';
@@ -41,6 +43,8 @@ export class Orchestrator {
   private dagBuilder: DAGBuilder;
   private scheduler: Scheduler;
   private agentFactory: AgentFactory;
+  private agentGenerator: AgentGenerator;
+  private agentRegistry: ReturnType<typeof getAgentRegistry>;
   private eventBus: ReturnType<typeof getEventBus>;
   private blackboard: ReturnType<typeof getBlackboard>;
   private sessionStore: ReturnType<typeof getSessionStore>;
@@ -56,6 +60,8 @@ export class Orchestrator {
     this.dagBuilder = new DAGBuilder(this.llm);
     this.scheduler = new Scheduler(config.maxParallelAgents ?? appConfig.cluster.maxParallelAgents);
     this.agentFactory = new AgentFactory(this.llm);
+    this.agentRegistry = getAgentRegistry();
+    this.agentGenerator = new AgentGenerator(this.llm, this.agentRegistry);
     this.eventBus = getEventBus();
     this.blackboard = getBlackboard();
     this.sessionStore = getSessionStore();
@@ -145,11 +151,40 @@ export class Orchestrator {
       // 3. Parse intent
       this.eventBus.emit(EventType.SESSION_CREATED, { sessionId });
       const intent = await this.intentParser.parse(fixedInput);
-      await this.eventBus.publish(EventType.SESSION_UPDATED, { sessionId, intent });
+
+      // 3.1. Search intent fallback: 使用关键词检测作为 LLM 意图识别的补充
+      // 当 LLM 未能正确识别搜索意图时，基于关键词进行修正
+      const searchIntent = this.detectSearchIntentByKeywords(fixedInput, intent);
+      await this.eventBus.publish(EventType.SESSION_UPDATED, { sessionId, intent: searchIntent });
+
+      // 3.2. Check if we need to generate a new Agent (L2-16)
+      if (searchIntent.type !== 'conversation') {
+        try {
+          const agentGenerationRecord = await this.agentGenerator.generateAgent(searchIntent);
+          if (agentGenerationRecord) {
+            logger.info({
+              agentType: agentGenerationRecord.agentType,
+              configPath: agentGenerationRecord.configPath
+            }, 'New Agent generated');
+
+            // Record to feedback system
+            await this.feedbackCollector.recordAgentGeneration({
+              agentType: agentGenerationRecord.agentType,
+              taskId: searchIntent.primaryGoal,
+              configPath: agentGenerationRecord.configPath,
+              timestamp: agentGenerationRecord.timestamp,
+              sessionId,
+              userId
+            });
+          }
+        } catch (error: any) {
+          logger.warn({ error: error.message }, 'Agent generation failed, continuing with existing agents');
+        }
+      }
 
       // 3.5. Handle conversation intents (greetings, chat, etc.) - skip DAG
-      if (intent.type === 'conversation') {
-        const conversationResponse = await this.handleConversation(intent, fixedInput, userProfile);
+      if (searchIntent.type === 'conversation') {
+        const conversationResponse = await this.handleConversation(searchIntent, fixedInput, userProfile);
 
         // Add response to session
         await this.sessionStore.addMessage(sessionId, 'assistant', conversationResponse);
@@ -189,11 +224,11 @@ export class Orchestrator {
       }
 
       // 4. Build DAG
-      const dag = await this.dagBuilder.build(intent);
+      const dag = await this.dagBuilder.build(searchIntent);
       logger.info({ taskCount: dag.getAllTasks().length }, 'DAG built');
 
       // 5. Create session in blackboard
-      await this.blackboard.createSession(sessionId, { intent, dag });
+      await this.blackboard.createSession(sessionId, { intent: searchIntent, dag });
 
       // 6. Schedule execution
       const taskResults = await this.scheduler.schedule(sessionId, dag, {
@@ -203,7 +238,12 @@ export class Orchestrator {
       // 7. Format result for CLI/API response
       const result = this.formatResult(taskResults);
 
-      // 8. Add agent response to session
+      // 8. Save artifacts to separate files
+      if (result.success && result.data?.tasks) {
+        await this.saveArtifacts(sessionId, result.data.tasks);
+      }
+
+      // 9. Add agent response to session
       if (result.success && result.data?.response) {
         await this.sessionStore.addMessage(sessionId, 'assistant', result.data.response);
       }
@@ -286,7 +326,7 @@ export class Orchestrator {
    * 快速检测简单对话输入（避免因编码问题调用LLM）
    * 检测乱码、极短输入等，直接返回友好回应
    */
-  private detectQuickConversation(fixedInput: string, originalInput: string): string | null {
+  private detectQuickConversation(fixedInput: string, _originalInput: string): string | null {
     // 检测1：极短输入（可能是乱码的中文问候）
     if (fixedInput.length <= 3) {
       // 检查是否只包含特殊字符或乱码特征
@@ -298,25 +338,77 @@ export class Orchestrator {
     }
 
     // 检测2：原始输入包含中文字符但fixedInput很短（编码问题）
-    const hasChineseOriginal = /[\u4e00-\u9fa5]/.test(originalInput);
-    if (hasChineseOriginal && fixedInput.length <= 3 && fixedInput !== originalInput) {
-      return `您好！很高兴为您服务。我是您的个人AI助手，可以帮您完成各种工作任务，比如：\n- 编写代码和程序\n- 数据分析和处理\n- 文档编写和分析\n- 自动化任务执行\n\n请告诉我您需要什么帮助？`;
-    }
+    // 修复：不再拦截中文输入，让它们正常进入任务处理流程
+    // const hasChineseOriginal = /[\u4e00-\u9fa5]/.test(originalInput);
+    // if (hasChineseOriginal && fixedInput.length <= 3 && fixedInput !== originalInput) {
+    //   return `您好！...`;
+    // }
 
-    // 检测3：已知的简单问候模式（即使编码正确）
-    const greetings = ['hi', 'hello', 'hey', '嗨', '你好'];
+    // 检测3：已知的简单问候模式（精确匹配，避免误判任务描述）
+    const greetings = ['hi', 'hello', 'hey', '嗨', '你好', 'hi!', 'hello!', 'hey!', '嗨!', '你好!'];
     const lowerInput = fixedInput.toLowerCase().trim();
-    if (greetings.some(g => lowerInput === g || lowerInput.startsWith(g))) {
+    if (greetings.includes(lowerInput)) {
       return `你好！我是您的个人AI助手，随时准备协助您完成工作。我可以处理代码、数据、文档等各种任务。请随时告诉我您的需求。`;
     }
 
-    // 检测4：帮助请求
-    const helpPatterns = ['help', '帮助', '你能做什么', 'what can you do'];
-    if (helpPatterns.some(h => lowerInput.includes(h))) {
+    // 检测4：帮助请求（精确匹配或以特定关键词开头）
+    const helpPatterns = ['help', '帮助', '你能做什么', 'what can you do', 'what can i do'];
+    if (helpPatterns.some(h => lowerInput === h || lowerInput.startsWith(h + ' '))) {
       return `我是您的个人AI助手，可以帮您完成以下工作：\n\n📝 代码开发\n- 编写各类编程语言代码\n- 代码审查和优化建议\n- 调试和问题排查\n\n📊 数据处理\n- 数据分析和可视化\n- 数据清洗和转换\n- 统计分析\n\n📄 文档处理\n- 文档编写和编辑\n- 内容分析和总结\n- 格式转换\n\n🤖 自动化任务\n- 工作流自动化\n- 批量操作\n- 定时任务调度\n\n请告诉我您想做什么，我会智能匹配最合适的Agent来帮您完成！`;
     }
 
     return null;
+  }
+
+  /**
+   * 检测搜索意图（关键词检测，作为 LLM 意图识别的补充）
+   * 当检测到搜索关键词时，覆盖 LLM 的识别结果
+   */
+  private detectSearchIntentByKeywords(userInput: string, originalIntent: any): any {
+    const lowerInput = userInput.toLowerCase();
+
+    // 搜索意图关键词（中英文）
+    const searchKeywords = [
+      'search', '搜索', '查找', 'find', 'look for', 'lookup',
+      'google', '百度', 'bing',
+      'news', '新闻', 'latest', '最新',
+      'what is', 'what are', 'how to', 'define'
+    ];
+
+    // 检查是否包含搜索关键词
+    const hasSearchKeyword = searchKeywords.some(keyword => lowerInput.includes(keyword));
+
+    // 如果包含搜索关键词且原意图不是 automation，则覆盖
+    if (hasSearchKeyword && originalIntent.type !== 'automation') {
+      logger.info(
+        { originalIntent: originalIntent.type, detectedIntent: 'automation' },
+        'Search intent detected by keywords, overriding LLM intent'
+      );
+
+      // 提取搜索查询内容
+      let searchQuery = userInput;
+      // 移除常见搜索关键词以获得更清晰的查询
+      searchKeywords.forEach(keyword => {
+        const regex = new RegExp(keyword, 'gi');
+        searchQuery = searchQuery.replace(regex, '').trim();
+      });
+
+      // 如果提取后内容为空，使用原始输入
+      if (!searchQuery || searchQuery.length < 2) {
+        searchQuery = userInput;
+      }
+
+      return {
+        ...originalIntent,
+        type: 'automation',
+        primaryGoal: `搜索关于 ${searchQuery} 的信息`,
+        capabilities: ['web-search', 'information-retrieval'],
+        complexity: 'simple',
+        estimatedSteps: 1,
+      };
+    }
+
+    return originalIntent;
   }
 
   /**
@@ -432,6 +524,112 @@ export class Orchestrator {
         },
       },
     };
+  }
+
+  /**
+   * 保存任务产物到独立文件
+   */
+  private async saveArtifacts(sessionId: string, tasks: any[]): Promise<void> {
+    const fs = await import('fs');
+    const join = (await import('path')).join;
+
+    const artifactsDir = join(process.cwd(), 'memory', 'artifacts', sessionId);
+
+    // 确保目录存在
+    await fs.promises.mkdir(artifactsDir, { recursive: true });
+
+    for (const task of tasks) {
+      if (!task.result) continue;
+
+      const taskName = task.taskId || 'unknown';
+
+      // 提取不同类型的产物
+      if (task.result.code) {
+        // 保存代码文件
+        const codeExt = this.getCodeExtension(task.result.code);
+        const codePath = join(artifactsDir, `${taskName}${codeExt}`);
+        await fs.promises.writeFile(codePath, task.result.code, 'utf-8');
+        logger.info({ artifact: codePath }, 'Code artifact saved');
+      }
+
+      if (task.result.analysis) {
+        // 保存分析报告
+        const reportPath = join(artifactsDir, `${taskName}_analysis.md`);
+        await fs.promises.writeFile(reportPath, task.result.analysis, 'utf-8');
+        logger.info({ artifact: reportPath }, 'Analysis artifact saved');
+      }
+
+      if (task.result.automationPlan) {
+        // 保存自动化计划
+        const planPath = join(artifactsDir, `${taskName}_automation_plan.md`);
+        await fs.promises.writeFile(planPath, task.result.automationPlan, 'utf-8');
+        logger.info({ artifact: planPath }, 'Automation plan artifact saved');
+      }
+
+      if (task.result.response && !task.result.code) {
+        // 保存其他响应内容
+        const responsePath = join(artifactsDir, `${taskName}_response.md`);
+        await fs.promises.writeFile(responsePath, task.result.response, 'utf-8');
+        logger.info({ artifact: responsePath }, 'Response artifact saved');
+      }
+    }
+
+    // 创建 artifacts 索引文件
+    const indexPath = join(artifactsDir, 'index.md');
+    let indexContent = `# Artifacts for Session: ${sessionId}\n\n`;
+    indexContent += `**Generated**: ${new Date().toISOString()}\n\n`;
+    indexContent += `## Task Artifacts\n\n`;
+
+    for (const task of tasks) {
+      if (!task.result) continue;
+      indexContent += `### ${task.taskId} (${task.agentType})\n\n`;
+
+      if (task.result.code) {
+        const codeExt = this.getCodeExtension(task.result.code);
+        indexContent += `- **Code**: [\`${task.taskId}${codeExt}\`](./${task.taskId}${codeExt})\n`;
+      }
+
+      if (task.result.analysis) {
+        indexContent += `- **Analysis**: [\`${task.taskId}_analysis.md\`](./${task.taskId}_analysis.md)\n`;
+      }
+
+      if (task.result.automationPlan) {
+        indexContent += `- **Automation Plan**: [\`${task.taskId}_automation_plan.md\`](./${task.taskId}_automation_plan.md)\n`;
+      }
+
+      if (task.result.response && !task.result.code) {
+        indexContent += `- **Response**: [\`${task.taskId}_response.md\`](./${task.taskId}_response.md)\n`;
+      }
+
+      indexContent += '\n';
+    }
+
+    await fs.promises.writeFile(indexPath, indexContent, 'utf-8');
+    logger.info({ sessionId, artifactsDir, artifactCount: tasks.length }, 'Artifacts saved successfully');
+  }
+
+  /**
+   * 根据代码内容检测文件扩展名
+   */
+  private getCodeExtension(code: string): string {
+    if (code.includes('```python') || code.includes('def ')) return '.py';
+    if (code.includes('```javascript') || code.includes('```typescript') || code.includes('function ') || code.includes('const ')) return '.js';
+    if (code.includes('```java') || code.includes('public class')) return '.java';
+    if (code.includes('```cpp') || code.includes('#include')) return '.cpp';
+    if (code.includes('```csharp') || code.includes('namespace ')) return '.cs';
+    if (code.includes('```go') || code.includes('package ')) return '.go';
+    if (code.includes('```rust') || code.includes('fn ')) return '.rs';
+    if (code.includes('```ruby') || code.includes('def ')) return '.rb';
+    if (code.includes('```php') || code.includes('<?php')) return '.php';
+    if (code.includes('```sql')) return '.sql';
+    if (code.includes('```bash') || code.includes('```sh')) return '.sh';
+    if (code.includes('```json')) return '.json';
+    if (code.includes('```xml')) return '.xml';
+    if (code.includes('```html')) return '.html';
+    if (code.includes('```css')) return '.css';
+    if (code.includes('class ')) return '.ts'; // Default for TypeScript classes
+
+    return '.txt'; // Default fallback
   }
 
   /**

@@ -18,6 +18,10 @@ export interface APIServerConfig {
   host?: string;
   port?: number;
   logger?: boolean;
+  api?: {
+    host?: string;
+    port?: number;
+  };
 }
 
 export class APIServer {

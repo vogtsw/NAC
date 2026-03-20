@@ -388,6 +388,128 @@ export class AgentRegistry {
         logger.warn({ dir: agentDir, error: error.message }, 'Failed to load custom agents');
       }
     }
+
+    // 加载 config/agents/ 下的纯配置文件
+    await this.loadAgentConfigurations();
+  }
+
+  /**
+   * 重新加载自定义 Agents（用于热加载）
+   */
+  async reloadCustomAgents(): Promise<void> {
+    logger.info('Reloading custom agents...');
+
+    // 1. 加载 config/agents/ 下的纯配置文件
+    await this.loadAgentConfigurations();
+
+    // 2. 重新加载 src/agents/custom/ 目录
+    const customAgentDir = resolve(process.cwd(), 'src/agents/custom');
+    if (existsSync(customAgentDir)) {
+      await this.loadAgentsFromDirectory(customAgentDir);
+    }
+
+    logger.info({
+      totalAgents: this.agentClasses.size,
+      customAgents: Array.from(this.profiles.values()).filter(p => p.author !== 'NexusAgent Team').length
+    }, 'Custom agents reloaded');
+  }
+
+  /**
+   * 从 config/agents/ 加载纯配置文件
+   */
+  private async loadAgentConfigurations(): Promise<void> {
+    const configDir = resolve(process.cwd(), 'config/agents');
+    if (!existsSync(configDir)) return;
+
+    try {
+      const files = await fs.readdir(configDir);
+      const configFiles = files.filter(f => f.endsWith('.system.md') && f !== 'default.system.md');
+
+      for (const configFile of configFiles) {
+        const agentType = configFile.replace('.system.md', '');
+
+        // 跳过已经注册的 Agent
+        if (this.isRegistered(agentType)) continue;
+
+        // 读取配置文件
+        const configPath = join(configDir, configFile);
+        const content = await fs.readFile(configPath, 'utf-8');
+
+        // 解析配置（从 markdown 中提取信息）
+        const profile = this.parseAgentConfig(agentType, content);
+
+        // 对于纯配置文件，使用 GenericAgent 作为实现类
+        // 但在创建 Agent 实例时会使用自定义的系统提示词
+        const { GenericAgent } = await import('../agents/GenericAgent.js');
+
+        this.registerAgent(agentType, GenericAgent, profile);
+
+        logger.info({ agentType, source: 'config/agents/' }, 'Agent configuration loaded');
+      }
+    } catch (error: any) {
+      logger.warn({ error: error.message }, 'Failed to load agent configurations');
+    }
+  }
+
+  /**
+   * 解析 Agent 配置文件
+   */
+  private parseAgentConfig(agentType: string, content: string): AgentProfile {
+    // 提取描述
+    const descriptionMatch = content.match(/## Description\s*\n\s*([^\n]+)/);
+    const description = descriptionMatch ? descriptionMatch[1].trim() : `Auto-generated ${agentType}`;
+
+    // 提取版本
+    const versionMatch = content.match(/\*\*Version\*\*:\s*([^\n]+)/);
+    const version = versionMatch ? versionMatch[1].trim() : '1.0.0';
+
+    // 提取作者
+    const authorMatch = content.match(/\*\*Author\*\*:\s*([^\n]+)/);
+    const author = authorMatch ? authorMatch[1].trim() : 'NAC Auto-Generator';
+
+    // 提取 Strengths
+    const strengthsSection = content.match(/### Strengths\s*\n([\s\S]*?)\n###/);
+    const strengths = strengthsSection
+      ? strengthsSection[1].split('\n')
+          .map(line => line.replace(/^-\s*/, '').trim())
+          .filter(line => line.length > 0)
+      : [];
+
+    // 提取 Weaknesses
+    const weaknessesSection = content.match(/### Weaknesses\s*\n([\s\S]*?)\n###/);
+    const weaknesses = weaknessesSection
+      ? weaknessesSection[1].split('\n')
+          .map(line => line.replace(/^-\s*/, '').trim())
+          .filter(line => line.length > 0)
+      : [];
+
+    // 提取 Ideal Tasks
+    const idealTasksSection = content.match(/### Ideal Tasks\s*\n([\s\S]*?)\n###/);
+    const idealTasks = idealTasksSection
+      ? idealTasksSection[1].split('\n')
+          .map(line => line.replace(/^-\s*/, '').trim())
+          .filter(line => line.length > 0)
+      : [];
+
+    // 提取 Required Skills
+    const requiredSkillsSection = content.match(/### Required Skills\s*\n([\s\S]*?)\n##/);
+    const requiredSkills = requiredSkillsSection
+      ? requiredSkillsSection[1].split('\n')
+          .map(line => line.replace(/^-\s*/, '').trim())
+          .filter(line => line.length > 0 && line !== 'None specified')
+      : [];
+
+    return {
+      agentType,
+      description,
+      strengths,
+      weaknesses,
+      idealTasks,
+      requiredSkills,
+      examples: [],
+      version,
+      author
+    };
   }
 
   /**
@@ -456,6 +578,24 @@ export class AgentRegistry {
   /**
    * 获取注册表统计信息
    */
+  /**
+   * List all registered agents with their profiles
+   * Convenience method for tests and introspection
+   */
+  listAgents(): Array<{
+    agentType: string;
+    description: string;
+    version: string;
+    author?: string;
+  }> {
+    return Array.from(this.profiles.values()).map(profile => ({
+      agentType: profile.agentType,
+      description: profile.description,
+      version: profile.version,
+      author: profile.author,
+    }));
+  }
+
   getStats(): {
     totalAgents: number;
     builtinAgents: number;

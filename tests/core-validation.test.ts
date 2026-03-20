@@ -4,17 +4,22 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-import { getSkillManager } from '../src/skills/SkillManager.js';
-import { getAgentRegistry } from '../src/orchestrator/AgentRegistry.js';
-import { AgentFactory } from '../src/agents/AgentFactory.js';
-import { IntentParser } from '../src/orchestrator/IntentParser.js';
-import { DAGBuilder, DAGBuilderV2 } from '../src/orchestrator/DAGBuilder.js';
-import { AgentRouter } from '../src/orchestrator/AgentRouter.js';
-import { getBlackboard } from '../src/state/Blackboard.js';
-import { getEventBus, EventType } from '../src/state/EventBus.js';
-import { getSessionStore } from '../src/state/SessionStore.js';
-import { getPromptBuilder } from '../src/llm/PromptBuilder.js';
+import { getLLMClient } from '../src/llm/LLMClient';
+import { getSkillManager } from '../src/skills/SkillManager';
+import { getAgentRegistry } from '../src/orchestrator/AgentRegistry';
+import { AgentFactory } from '../src/agents/AgentFactory';
+import { IntentParser } from '../src/orchestrator/IntentParser';
+import { DAGBuilder, DAGBuilderV2 } from '../src/orchestrator/DAGBuilder';
+import { AgentRouter } from '../src/orchestrator/AgentRouter';
+import { getBlackboard } from '../src/state/Blackboard';
+import { getEventBus, EventType } from '../src/state/EventBus';
+import { getSessionStore } from '../src/state/SessionStore';
+import { getPromptBuilder } from '../src/llm/PromptBuilder';
+import { Scheduler } from '../src/orchestrator/Scheduler';
+import { Orchestrator } from '../src/orchestrator/Orchestrator';
+import * as llmModule from '../src/llm';
+import * as orchestratorModule from '../src/orchestrator';
+import * as apiModule from '../src/api';
 
 describe('NexusAgent-Cluster 核心功能测试', () => {
   let llm: any;
@@ -59,7 +64,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
     });
 
     it('TC-LLM-003: Prompt 模板应正常工作', () => {
-      const { IntentAnalysisPrompt, TaskPlanningPrompt } = require('../src/llm/prompts.js');
+      const { IntentAnalysisPrompt, TaskPlanningPrompt } = llmModule;
 
       const intentPrompt = IntentAnalysisPrompt.format('测试输入');
       expect(intentPrompt).toContain('测试输入');
@@ -127,7 +132,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
   // ==================== L2-3: Agent Factory 测试 ====================
 
   describe('L2-3: Agent Factory', () => {
-    it('TC-AGENT-001: 应能创建所有 Agent 类型', () => {
+    it('TC-AGENT-001: 应能创建所有 Agent 类型', async () => {
       const agentTypes = [
         'CodeAgent',
         'DataAgent',
@@ -137,7 +142,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
       ];
 
       for (const type of agentTypes) {
-        const agent = agentFactory.createAgent(type, { taskId: 'test-001' });
+        const agent = await agentFactory.createAgent(type, { taskId: 'test-001' });
         expect(agent).toBeDefined();
         expect(agent.execute).toBeInstanceOf(Function);
         expect(agent.getStats).toBeInstanceOf(Function);
@@ -146,7 +151,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
     });
 
     it('TC-AGENT-002: Agent 应能获取系统提示词', async () => {
-      const codeAgent = agentFactory.createAgent('CodeAgent', { taskId: 'test' });
+      const codeAgent = await agentFactory.createAgent('CodeAgent', { taskId: 'test' });
       const systemPrompt = await codeAgent.getSystemPrompt();
 
       expect(systemPrompt).toBeDefined();
@@ -244,7 +249,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
       });
 
       await blackboard.setState(sessionId, 'testKey', { value: 'testValue' });
-      const state = await blackboard.getState(sessionId, 'testKey');
+      const state = await blackboard.getStateByKey(sessionId, 'testKey');
 
       expect(state).toEqual({ value: 'testValue' });
       console.log('✅ Blackboard 共享状态工作正常');
@@ -371,7 +376,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
   describe('task.md 要求验证', () => {
     it('✅ L2-1: LLM 抽象层应实现', () => {
       expect(llm).toBeDefined();
-      const { PromptBuilder } = require('../src/llm/PromptBuilder.js');
+      const { PromptBuilder } = llmModule;
       expect(PromptBuilder).toBeDefined();
     });
 
@@ -388,8 +393,7 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
 
     it('✅ L2-3.5: 智能路由系统应实现', () => {
       expect(agentRegistry).toBeDefined();
-      const { AgentRouter } = require('../src/orchestrator/AgentRouter.js');
-      expect(AgentRouter).toBeDefined();
+      expect(orchestratorModule.AgentRouter).toBeDefined();
     });
 
     it('✅ L2-4: Blackboard 应实现', () => {
@@ -398,28 +402,24 @@ describe('NexusAgent-Cluster 核心功能测试', () => {
     });
 
     it('✅ L2-5: Intent Parser 应实现', () => {
-      const { IntentParser } = require('../src/orchestrator/IntentParser.js');
-      expect(IntentParser).toBeDefined();
+      expect(orchestratorModule.IntentParser).toBeDefined();
     });
 
     it('✅ L2-6: DAG Builder 应实现', () => {
-      const { DAGBuilder, DAGBuilderV2 } = require('../src/orchestrator/DAGBuilder.js');
-      expect(DAGBuilder).toBeDefined();
-      expect(DAGBuilderV2).toBeDefined();
+      const { DAGBuilder: DAG, DAGBuilderV2: DAGV2 } = orchestratorModule;
+      expect(DAG).toBeDefined();
+      expect(DAGV2).toBeDefined();
     });
 
     it('✅ L2-7: Scheduler 应实现', () => {
-      const { Scheduler } = require('../src/orchestrator/Scheduler.js');
       expect(Scheduler).toBeDefined();
     });
 
     it('✅ L2-8: Orchestrator 应实现', () => {
-      const { Orchestrator } = require('../src/orchestrator/Orchestrator.js');
       expect(Orchestrator).toBeDefined();
     });
 
     it('✅ L2-10: API 服务应实现', () => {
-      const apiModule = require('../src/api/server.js');
       expect(apiModule).toBeDefined();
     });
   });

@@ -1,7 +1,7 @@
 /**
  * Skill Manager
- * Manage skill registration, loading, and execution
- * Supports both built-in and external/custom skills
+ * Manage skill registration, loading, and execution with security
+ * Supports both built-in and external/custom skills with permission enforcement
  */
 
 import { Skill, SkillCategory, SkillContext, SkillResult, SkillMetadata } from './types.js';
@@ -10,6 +10,9 @@ import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
+import { getSkillPermissionManager, PermissionCheckResult } from '../security/SkillPermissionManager.js';
+import { getInputValidator } from '../security/InputValidator.js';
+import { Permission } from '../security/permissions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -51,6 +54,8 @@ export class SkillManager {
   private skills: Map<string, Skill> = new Map();
   private externalSkillPackages: Map<string, SkillPackageManifest> = new Map();
   private initialized: boolean = false;
+  private permissionManager = getSkillPermissionManager();
+  private inputValidator = getInputValidator();
 
   constructor() {
     // Don't call async in constructor
@@ -185,7 +190,7 @@ export class SkillManager {
   }
 
   /**
-   * Execute a skill
+   * Execute a skill with security checks
    */
   async executeSkill(
     skillName: string,
@@ -210,6 +215,40 @@ export class SkillManager {
       };
     }
 
+    // Security: Check permissions
+    const permissionCheck = this.checkSkillPermissions(skillName, params);
+    if (!permissionCheck.granted) {
+      logger.warn({ skill: skillName, reason: permissionCheck.reason }, 'Permission check failed');
+      return {
+        success: false,
+        error: `Permission denied: ${permissionCheck.reason}`,
+      };
+    }
+
+    // Security: Validate resource limits
+    const limitCheck = this.permissionManager.validateResourceLimits(skillName, 'execute', params);
+    if (!limitCheck.allowed) {
+      logger.warn({ skill: skillName, reason: limitCheck.reason }, 'Resource limit check failed');
+      return {
+        success: false,
+        error: `Resource limit exceeded: ${limitCheck.reason}`,
+      };
+    }
+
+    // Security: Validate input
+    if (params.path || params.command || params.content) {
+      const inputToValidate = params.path || params.command || params.content || '';
+      const validation = this.inputValidator.validateUserInput(inputToValidate);
+
+      if (!validation.valid) {
+        logger.warn({ skill: skillName, errors: validation.errors }, 'Input validation failed');
+        return {
+          success: false,
+          error: `Input validation failed: ${validation.errors.join(', ')}`,
+        };
+      }
+    }
+
     if (skill.validate && !skill.validate(params)) {
       logger.warn({ skill: skillName, params }, 'Invalid skill parameters');
       return {
@@ -227,17 +266,72 @@ export class SkillManager {
 
       logger.info({ skill: skillName, duration, success: result.success }, 'Skill executed');
 
+      // Audit skill execution
+      await this.permissionManager.auditSkillExecution(skillName, 'execute', params, result);
+
       // Record usage
       await this.recordUsage(skillName, result);
 
       return result;
     } catch (error: any) {
       logger.error({ skill: skillName, error: error.message }, 'Skill execution failed');
+
+      // Audit failed execution
+      await this.permissionManager.auditSkillExecution(skillName, 'execute', params, {
+        success: false,
+        error: error.message,
+      });
+
       return {
         success: false,
         error: error.message,
       };
     }
+  }
+
+  /**
+   * Check if skill has required permissions
+   */
+  private checkSkillPermissions(skillName: string, params: any): PermissionCheckResult {
+    // Get required permissions based on skill type and parameters
+    const requiredPermissions = this.determineRequiredPermissions(skillName, params);
+
+    if (requiredPermissions.length === 0) {
+      return { granted: true, requiredPermission: Permission.FILE_READ }; // Default
+    }
+
+    return this.permissionManager.checkPermissions(skillName, requiredPermissions);
+  }
+
+  /**
+   * Determine required permissions based on skill type and parameters
+   */
+  private determineRequiredPermissions(skillName: string, params: any): string[] {
+    const permissions: string[] = [];
+
+    // File operations
+    if (skillName === 'file-ops') {
+      const operation = params.operation;
+      if (operation === 'read' || operation === 'list' || operation === 'exists') {
+        permissions.push(Permission.FILE_READ);
+      } else if (operation === 'write' || operation === 'modify' || operation === 'mkdir') {
+        permissions.push(Permission.FILE_WRITE);
+      } else if (operation === 'delete') {
+        permissions.push(Permission.FILE_DELETE);
+      }
+    }
+
+    // Terminal execution
+    if (skillName === 'terminal-exec') {
+      permissions.push(Permission.SYSTEM_EXEC);
+    }
+
+    // Web operations
+    if (skillName === 'web-search') {
+      permissions.push(Permission.NETWORK_HTTPS);
+    }
+
+    return permissions;
   }
 
   /**
@@ -309,6 +403,7 @@ export class SkillManager {
     const { DataAnalysisSkill } = await import('./builtin/DataAnalysisSkill.js');
     const { DocxProcessingSkill } = await import('./builtin/DocxProcessingSkill.js');
     const { WebSearchSkill } = await import('./builtin/WebSearchSkill.js');
+    const { SkillCreatorSkill } = await import('./builtin/SkillCreatorSkill.js');
 
     this.register(CodeGenerationSkill);
     this.register(FileOpsSkill);
@@ -317,8 +412,9 @@ export class SkillManager {
     this.register(DataAnalysisSkill);
     this.register(DocxProcessingSkill);
     this.register(WebSearchSkill);
+    this.register(SkillCreatorSkill);
 
-    logger.info({ count: 7 }, 'Builtin skills loaded');
+    logger.info({ count: 8 }, 'Builtin skills loaded');
   }
 
   /**

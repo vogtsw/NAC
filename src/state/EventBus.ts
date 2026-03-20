@@ -75,6 +75,21 @@ export class EventBus extends EventEmitter {
   }
 
   /**
+   * Subscribe to an event (alias for 'on')
+   * Matches test expectations
+   */
+  subscribe(eventType: EventType, listener: (data: any) => void): this {
+    return this.on(eventType, listener);
+  }
+
+  /**
+   * Unsubscribe from an event (alias for 'off')
+   */
+  unsubscribe(eventType: EventType, listener: (data: any) => void): this {
+    return this.off(eventType, listener);
+  }
+
+  /**
    * Subscribe to event once
    */
   once(eventType: EventType, listener: (data: any) => void): this {

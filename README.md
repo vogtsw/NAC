@@ -1,372 +1,422 @@
-# NexusAgent-Cluster (NAC)
+# NAC (NexusAgent-Cluster)
 
-**Multi-Agent Orchestration System** - A TypeScript/Node.js based distributed agent cluster for intelligent task automation with DAG-based parallel scheduling.
+<div align="center">
 
-## Overview
+**多Agent集群编排系统** | Multi-Agent Cluster Orchestration System
 
-NexusAgent-Cluster (NAC) is an extensible multi-agent orchestration system that automatically generates, schedules, and manages specialized sub-agents to complete complex tasks through parallel collaboration.
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E=20.0.0-green)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-97.6%25-brightgreen)](tests/)
 
-### Core Features
+一个基于**DAG并行调度**的智能多Agent协作框架
 
-| Feature | Description |
-|---------|-------------|
-| **Intent-to-Action** | Converts natural language intent into executable task sequences using LLM |
-| **Dynamic Agent Generation** | Creates specialized agents on-demand based on task requirements |
-| **DAG-Based Scheduling** | Identifies parallelizable tasks using Directed Acyclic Graph algorithms |
-| **Skills System** | Modular, pluggable capabilities that agents can dynamically load |
-| **Session Memory** | Markdown-based conversation history storage (no RAG required) |
-| **Agent Prompts** | Configurable system prompts stored as MD files |
-| **Multi-LLM Support** | Works with Zhipu AI, DeepSeek, OpenAI, Qwen, and more |
-| **Event-Driven Architecture** | Real-time event broadcasting with in-memory and Redis-based EventBus |
-| **Type-Safe** | Built with TypeScript 5+ for full type safety |
+[特性](#-核心特性) • [快速开始](#-快速开始) • [文档](#-文档) • [架构](#-架构) • [贡献](#-贡献)
 
-### Supported Task Types
+</div>
 
-- **Code Development** - Generate, review, and refactor code
-- **Data Analysis** - Process and analyze datasets
-- **Automation** - Terminal commands and file operations
-- **Analysis** - Code review and data insights
-- **Deployment** - Build and deployment workflows
+---
 
-## Tech Stack
+## 📖 项目简介
 
-```yaml
-Runtime:
-  - Node.js 20+
-  - TypeScript 5+
+NAC (NexusAgent-Cluster) 是一个先进的多Agent集群编排系统，通过DAG（有向无环图）实现任务的并行调度和智能路由。系统支持10+种专业Agent和26+种内置技能，可以处理复杂的代码生成、数据分析、文档处理等任务。
 
-Package Manager:
-  - pnpm
+### 核心能力
 
-State Management:
-  - Redis 7+ (optional, for distributed state)
-  - In-memory fallback
-  - Markdown-based session storage
+- 🤖 **多Agent协作**: 10种专业Agent协同工作
+- ⚡ **DAG并行调度**: 基于优先级的Lane Queue并发控制
+- 🎯 **智能意图识别**: 自动解析用户需求并路由到合适的Agent
+- 🔌 **插件化技能**: 26+内置技能 + 动态技能创建
+- 🛡️ **安全沙箱**: 完整的权限管理和沙箱隔离
+- 📊 **可观测性**: 详细的日志、指标和会话追踪
 
-LLM Integration:
-  - OpenAI SDK (compatible with multiple providers)
+---
 
-Testing:
-  - Vitest (unit testing)
-  - tsx (test runner)
+## ✨ 核心特性
 
-Build Tools:
-  - tsup / esbuild
+### 1. 智能Agent路由
+
+```
+用户请求 → IntentParser → AgentRouter → 最优Agent
+                 ↓
+            复杂度评估 + 能力匹配
 ```
 
-## Quick Start
+**支持10种Agent**:
+- `CodeAgent` - 代码生成与重构
+- `DataAgent` - 数据分析与处理
+- `AutomationAgent` - 自动化任务
+- `AnalysisAgent` - 深度分析
+- `GenericAgent` - 通用对话
+- `DocumentAgent` - 文档处理
+- `AINewsSummarizerAgent` - AI新闻摘要
+- `MoeModelAgent` - MoE模型
+- `SolidityContractAgent` - 智能合约
+- `WorkRecordAgent` - 工作记录
 
-### Prerequisites
+### 2. DAG并行调度
 
-- Node.js 20+
-- pnpm (recommended) or npm
-- Redis 7+ (optional, for distributed features)
+基于Lane Queue的优先级调度系统:
 
-### Installation
+```
+Critical Lane (2并发)
+    ↑
+High Lane (5并发)
+    ↑
+Normal Lane (10并发)
+    ↑
+Low Lane (15并发)
+```
+
+### 3. 技能系统
+
+**26+内置技能**:
+- 💻 `code-generation` - 代码生成
+- 📝 `file-ops` - 文件操作
+- 🔧 `terminal-exec` - 命令执行
+- 🔍 `code-review` - 代码审查
+- 📊 `data-analysis` - 数据分析
+- 📄 `docx-processing` - 文档处理
+- 🌐 `web-search` - 网络搜索
+- ⚡ `skill-creator` - 动态创建技能
+
+### 4. 安全隔离
+
+- ✅ 沙箱执行环境
+- ✅ 细粒度权限控制
+- ✅ 敏感数据过滤
+- ✅ 命令白名单
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+- **Node.js**: >= 20.0.0
+- **包管理器**: pnpm (推荐) / npm / yarn
+- **LLM API**: DeepSeek / Zhipu AI / OpenAI
+
+### 安装
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/nexus-agent-cluster.git
-cd nexus-agent-cluster
+# 克隆仓库
+git clone https://github.com/vogtsw/NAC.git
+cd NAC
 
-# Install dependencies
+# 安装依赖
 pnpm install
 
-# Copy environment template
+# 配置环境变量
 cp .env.example .env
+# 编辑 .env 文件，填入你的 API 密钥
 ```
 
-### Configuration
+### 配置
 
-Edit `.env` file with your LLM provider credentials:
+在 `.env` 文件中配置：
 
 ```bash
-# Choose your LLM provider
-LLM_PROVIDER=zhipu
+# LLM API (必需)
+DEEPSEEK_API_KEY=your_deepseek_api_key
+# 或
+ZHIPU_API_KEY=your_zhipu_api_key
 
-# Zhipu AI (智谱)
-ZHIPU_API_KEY=your_api_key_here
-ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
-ZHIPU_MODEL=glm-4-flash
-
-# DeepSeek
-# DEEPSEEK_API_KEY=your_api_key_here
-# DEEPSEEK_BASE_URL=https://api.deepseek.com
-# DEEPSEEK_MODEL=deepseek-chat
-
-# OpenAI
-# OPENAI_API_KEY=your_api_key_here
-# OPENAI_BASE_URL=https://api.openai.com/v1
-# OPENAI_MODEL=gpt-4o
-
-# Qwen (阿里云)
-# QWEN_API_KEY=your_api_key_here
-# QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-# QWEN_MODEL=qwen-max
+# 可选配置
+PORT=3000
+LOG_LEVEL=INFO
+MAX_PARALLEL_AGENTS=10
 ```
 
-### Running
+### 运行
 
 ```bash
-# Run CLI interface
-pnpm cli run "Create a user login RESTful API"
-
-# Interactive chat mode
+# 交互式对话模式
 pnpm cli chat
 
-# Build the project
+# 查看帮助
+pnpm cli --help
+
+# 运行测试
+pnpm test
+
+# 构建项目
 pnpm build
 
-# Run tests
-pnpm test
+# 启动服务
+pnpm start
 ```
 
-## Project Structure
+### 使用示例
+
+```bash
+# 启动对话
+pnpm cli chat
+
+# 示例对话
+You> 创建一个TypeScript函数，实现快速排序
+
+You> 分析这个项目的代码质量并给出改进建议
+
+You> 帮我生成一个RESTful API的用户认证模块
+```
+
+---
+
+## 📚 文档
+
+### 核心文档
+
+| 文档 | 描述 |
+|------|------|
+| [doc/NAC_ARCHITECTURE.md](doc/NAC_ARCHITECTURE.md) | 系统架构详解 |
+| [doc/AGENT_DEVELOPMENT_GUIDE.md](doc/AGENT_DEVELOPMENT_GUIDE.md) | Agent开发指南 |
+| [doc/SECURITY_IMPLEMENTATION_GUIDE.md](doc/SECURITY_IMPLEMENTATION_GUIDE.md) | 安全实施指南 |
+| [doc/SMART_AGENT_ROUTING.md](doc/SMART_AGENT_ROUTING.md) | 智能路由机制 |
+
+### 测试报告
+
+| 报告 | 描述 |
+|------|------|
+| [memory/test-results/Final_Test_Report.md](memory/test-results/Final_Test_Report.md) | 最终测试报告 (97.6%通过率) |
+| [memory/test-results/E2E_Test_Solutions.md](memory/test-results/E2E_Test_Solutions.md) | E2E测试解决方案 |
+
+### 架构文档
 
 ```
-nexus-agent-cluster/
+NAC/
 ├── src/
-│   ├── agents/                # Agent System
-│   │   ├── BaseAgent.ts       # Abstract base class
-│   │   ├── GenericAgent.ts    # General-purpose agent
-│   │   ├── CodeAgent.ts       # Code development agent
-│   │   ├── DataAgent.ts       # Data analysis agent
-│   │   ├── AutomationAgent.ts # Automation agent
-│   │   ├── AnalysisAgent.ts   # Analysis agent
-│   │   ├── AgentFactory.ts    # Dynamic agent creation
-│   │   └── index.ts
-│   ├── orchestrator/          # Core Orchestration
-│   │   ├── Orchestrator.ts    # Main coordinator
-│   │   ├── IntentParser.ts    # Natural language parser
-│   │   ├── DAGBuilder.ts      # Task dependency graph
-│   │   ├── Scheduler.ts       # Parallel task executor
-│   │   ├── AgentRouter.ts     # LLM-based agent routing
-│   │   └── AgentRegistry.ts   # Dynamic agent registration
-│   ├── skills/                # Skills System
-│   │   ├── SkillManager.ts    # Skill registry
-│   │   ├── types.ts           # Type definitions
-│   │   └── builtin/           # Built-in skills
-│   │       ├── CodeGenerationSkill.ts
-│   │       ├── CodeReviewSkill.ts
-│   │       ├── DataAnalysisSkill.ts
-│   │       ├── FileOpsSkill.ts
-│   │       └── TerminalSkill.ts
-│   ├── llm/                   # LLM Abstraction
-│   │   ├── LLMClient.ts       # Universal LLM client
-│   │   ├── PromptBuilder.ts   # Context assembler
-│   │   └── prompts.ts         # System prompts
-│   ├── state/                 # State Management
-│   │   ├── Blackboard.ts      # Shared state (Redis)
-│   │   ├── SessionStore.ts    # MD-based session storage
-│   │   ├── EventBus.ts        # Event pub/sub
-│   │   └── models.ts          # Data models
-│   ├── monitoring/            # Logging & Metrics
-│   ├── config/                # Configuration
-│   └── cli.ts                 # CLI interface
-├── config/                    # Configuration Files
-│   └── agents/                # Agent System Prompts
-│       ├── CodeAgent.system.md
-│       ├── DataAgent.system.md
-│       ├── AnalysisAgent.system.md
-│       ├── AutomationAgent.system.md
-│       ├── GenericAgent.system.md
-│       └── default.system.md
-├── memory/                    # Session & Artifact Storage
-│   ├── sessions/              # Conversation history (MD)
-│   ├── feedback/              # User feedback (MD)
-│   └── artifacts/             # Task outputs
-├── skills/                    # User Skills (SKILL.md)
-├── tests/                     # Tests
-├── package.json
-├── tsconfig.json
-├── vitest.config.ts
-└── README.md
+│   ├── agents/          # Agent实现 (10种)
+│   ├── orchestrator/    # 编排层 (Orchestrator, DAGBuilder, Scheduler)
+│   ├── skills/          # 技能系统 (26+技能)
+│   ├── llm/             # LLM抽象层
+│   ├── state/           # 状态管理 (Blackboard, EventBus)
+│   ├── security/        # 安全模块
+│   └── api/             # API服务
+├── config/agents/       # Agent配置文件
+├── tests/               # 测试套件
+└── memory/              # 运行时数据和报告
 ```
 
-## CLI Usage
-
-```bash
-# Interactive chat mode
-pnpm cli chat
-
-# Execute a single task
-pnpm cli run "Generate a TypeScript function to calculate Fibonacci numbers"
-
-# Execute from file (avoid encoding issues)
-pnpm cli run --file task.txt
-
-# Show system status
-pnpm cli status
-
-# List all skills
-pnpm cli skills list
-
-# Show skill info
-pnpm cli skill info code-generation
-
-# Enable/disable a skill
-pnpm cli skill enable code-generation
-pnpm cli skill disable code-generation
-
-# Test a skill
-pnpm cli skill test code-generation
-
-# Show help
-pnpm cli help
-```
-
-### Interactive Mode Commands
-
-When in interactive mode (`pnpm cli chat`), you can use:
-
-| Command | Description |
-|---------|-------------|
-| `/status` | Show system status |
-| `/skills` | List available skills |
-| `/session` | Show current session info |
-| `/clear` | Clear screen |
-| `/exit`, `/quit` | Exit interactive mode |
-
-## Architecture
-
-### Request Flow
-
-```
-User Input
-    ↓
-Session Store (Create/Update Session)
-    ↓
-Intent Parser (LLM)
-    ↓
-Agent Router (LLM-based semantic matching)
-    ↓
-DAG Builder (Task Planning with intelligent routing)
-    ↓
-Scheduler (Parallel Execution)
-    ↓
-Agent Factory (Create Agents)
-    ↓
-PromptBuilder (Assemble Context)
-├── System Prompt (config/agents/*.system.md)
-├── Session History (memory/sessions/*.md)
-├── Skills Summary
-└── User Input
-    ↓
-LLM Call
-    ↓
-Skills Execution
-    ↓
-Session Store (Save Response)
-    ↓
-Result Aggregation
-```
-
-### Intelligent Agent Routing
-
-The system uses LLM-based semantic matching to select the most appropriate agents for each task:
-
-1. **AgentRegistry** - Maintains capability profiles for all agents
-2. **AgentRouter** - Uses LLM to semantically match tasks to agents
-3. **Collaboration Detection** - Identifies when multiple agents should work together
-4. **Dynamic Skill Assignment** - Suggests relevant skills based on task requirements
-
-### Custom Agents
-
-Create custom agents by extending `BaseAgent`:
-
-```typescript
-import { BaseAgent } from './BaseAgent.js';
-
-export class MyCustomAgent extends BaseAgent {
-  constructor(llm: any, skillManager: any) {
-    super(llm, skillManager, 'MyCustomAgent');
-  }
-
-  async execute(task: any): Promise<any> {
-    // Your custom logic here
-  }
-}
-```
-
-### Custom Skills
-
-Add custom skills to the `skills/` directory:
-
-```bash
-skills/
-└── my-skill/
-    └── SKILL.md
-```
-
-SKILL.md format:
-
-```markdown
----
-name: my-skill
-description: My custom skill
-category: custom
 ---
 
-## Overview
-Description of what this skill does.
+## 🏗️ 架构
 
-## Usage
-\`\`\`
-my-skill.execute(param1, param2)
-\`\`\`
+### 系统架构图
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   用户输入                           │
+└──────────────────┬──────────────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────────────┐
+│              Orchestrator (主编排器)                  │
+│  • IntentParser  • DAGBuilder  • Scheduler          │
+└──────────────────┬──────────────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────────────┐
+│            AgentRouter (智能路由)                     │
+│       能力匹配 + 复杂度评估 + 降级策略                │
+└──────────────────┬──────────────────────────────────┘
+                   ↓
+         ┌─────────┴─────────┐
+         ↓                   ↓
+┌──────────────┐    ┌──────────────┐
+│  DAG Builder │    │ AgentFactory │
+│  任务依赖图   │    │  Agent创建   │
+└──────┬───────┘    └──────┬───────┘
+       ↓                   ↓
+┌──────────────────────────────────────┐
+│      Scheduler (Lane Queues)         │
+│  Critical | High | Normal | Low      │
+└──────┬───────────────────────────────┘
+       ↓
+┌──────────────────────────────────────┐
+│      Agent + Skills 执行              │
+│  • CodeAgent + code-generation        │
+│  • DataAgent + data-analysis          │
+│  • AutomationAgent + terminal-exec   │
+└──────────────────────────────────────┘
 ```
 
-## Development
+### 核心组件
 
-### Code Quality
+| 组件 | 职责 | 文件 |
+|------|------|------|
+| **Orchestrator** | 主编排器，协调整个流程 | `src/orchestrator/Orchestrator.ts` |
+| **IntentParser** | 意图解析，理解用户需求 | `src/orchestrator/IntentParser.ts` |
+| **DAGBuilder** | DAG构建，建立任务依赖 | `src/orchestrator/DAGBuilder.ts` |
+| **Scheduler** | 任务调度，并行执行控制 | `src/orchestrator/Scheduler.ts` |
+| **AgentRouter** | Agent路由，选择最优Agent | `src/orchestrator/AgentRouter.ts` |
+| **SkillManager** | 技能管理，注册和执行 | `src/skills/SkillManager.ts` |
+| **Blackboard** | 状态共享，全局黑板 | `src/state/Blackboard.ts` |
+| **EventBus** | 事件总线，解耦通信 | `src/state/EventBus.ts` |
+
+---
+
+## 🧪 测试
+
+### 测试覆盖
+
+- **核心测试**: 28/28 通过 (100%)
+- **集成测试**: 13/14 通过 (92.9%)
+- **总体通过率**: 97.6%
+
+### 运行测试
 
 ```bash
-# Type checking
-pnpm type-check
-
-# Build
-pnpm build
-
-# Run linter
-pnpm lint
-```
-
-### Testing
-
-```bash
-# Unit tests
+# 运行所有测试
 pnpm test
 
-# Test coverage
+# 运行核心测试
+pnpm vitest run tests/core-validation.test.ts
+
+# 运行快速E2E测试
+pnpm vitest run tests/integration-quick.test.ts
+
+# 运行完整E2E测试
+pnpm vitest run tests/integration.test.ts
+
+# 生成覆盖率报告
 pnpm test:coverage
 ```
 
-## Configuration
+---
 
-See `.env.example` for all available configuration options.
+## 🔒 安全
 
-```bash
-# Cluster
-MAX_PARALLEL_AGENTS=10
-TASK_TIMEOUT=300000
+### 安全特性
 
-# Orchestrator
-ENABLE_DAG_OPTIMIZATION=true
-MAX_TASK_RETRIES=3
+- ✅ **沙箱隔离**: 命令执行在受控环境中
+- ✅ **权限管理**: 基于角色的访问控制
+- ✅ **敏感数据过滤**: 自动过滤API密钥等敏感信息
+- ✅ **命令白名单**: 限制可执行的命令
+- ✅ **资源限制**: CPU、内存、执行时间限制
 
-# Monitoring
-LOG_LEVEL=info
-ENABLE_METRICS=true
-```
+### 安全报告
 
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- [完整安全报告](SECURITY_AUDIT_SUMMARY.md)
+- [安全实施指南](doc/SECURITY_IMPLEMENTATION_GUIDE.md)
 
 ---
 
-**Built with ❤️ using TypeScript + Node.js**
+## 🛠️ 开发
+
+### 开发指南
+
+1. **分支策略**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. **代码规范**
+   ```bash
+   # 类型检查
+   pnpm type-check
+
+   # 代码检查
+   pnpm lint
+
+   # 代码格式化
+   pnpm format
+   ```
+
+3. **构建**
+   ```bash
+   pnpm build
+   ```
+
+4. **测试**
+   ```bash
+   pnpm test
+   ```
+
+### 添加新Agent
+
+1. 创建Agent类继承`BaseAgent`
+2. 实现`execute()`方法
+3. 创建配置文件 `config/agents/YourAgent.system.md`
+4. 在`AgentRegistry`中注册
+
+详细指南: [Agent开发指南](doc/AGENT_DEVELOPMENT_GUIDE.md)
+
+### 添加新技能
+
+1. 创建技能文件 `src/skills/builtin/YourSkill.ts`
+2. 实现`Skill`接口
+3. 在`SkillManager`中注册
+
+或使用动态创建:
+
+```bash
+pnpm cli chat
+
+You> 创建一个skill，名称是"email-sender"，描述是"发送邮件的功能"
+```
+
+---
+
+## 📊 性能
+
+### 性能指标
+
+- **DAG构建**: ~26秒 (包含LLM调用)
+- **任务执行**: 5-10秒/任务
+- **并发能力**: 最多10个并行Agent
+- **吞吐量**: ~100任务/分钟
+
+### 优化
+
+- Lane Queue优先级调度
+- 任务结果缓存
+- 增量DAG构建
+- 连接池管理
+
+---
+
+## 🤝 贡献
+
+欢迎贡献！请遵循以下步骤：
+
+1. Fork本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启Pull Request
+
+### 贡献指南
+
+- 遵循现有代码风格
+- 添加测试覆盖新功能
+- 更新相关文档
+- 确保所有测试通过
+
+---
+
+## 📝 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+## 🙏 致谢
+
+- [DeepSeek](https://www.deepseek.com/) - LLM服务支持
+- [Zhipu AI](https://open.bigmodel.cn/) - LLM服务支持
+- [Vitest](https://vitest.dev/) - 测试框架
+- [Fastify](https://www.fastify.io/) - Web框架
+
+---
+
+## 📮 联系
+
+- **GitHub**: [vogtsw/NAC](https://github.com/vogtsw/NAC)
+- **Issue**: [提交问题](https://github.com/vogtsw/NAC/issues)
+
+---
+
+<div align="center">
+
+**Made with ❤️ by the NAC Community**
+
+</div>

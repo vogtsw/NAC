@@ -1,6 +1,6 @@
 /**
  * Scheduler
- * Parallel task execution scheduler
+ * Parallel task execution scheduler with Lane Queues
  */
 
 import { DAG } from './DAGBuilder.js';
@@ -9,6 +9,9 @@ import { getBlackboard } from '../state/Blackboard.js';
 import { getEventBus, EventType } from '../state/EventBus.js';
 import { Task } from '../state/models.js';
 import { getLogger } from '../monitoring/logger.js';
+import { getLaneQueueManager } from '../scheduler/LaneQueue.js';
+import { getRetryManager, RetryManager } from '../reliability/RetryManager.js';
+import { getIdempotencyManager } from '../reliability/IdempotencyManager.js';
 
 const logger = getLogger('Scheduler');
 
@@ -25,26 +28,55 @@ export function fixUnicodeDisplay(text: string): string {
 
 export interface SchedulerContext {
   agentFactory: AgentFactory;
+  sessionId: string;
 }
 
 /**
- * Scheduler - Execute DAG tasks in parallel where possible
+ * Scheduler - Execute DAG tasks using Lane Queues
  */
 export class Scheduler {
   private runningTasks: Map<string, Promise<any>> = new Map();
+  private laneQueueManager = getLaneQueueManager();
+  private retryManager = getRetryManager();
+  private idempotencyManager = getIdempotencyManager();
+  private scheduleTimeout: number;
 
-  constructor(private maxParallelAgents: number = 10) {}
+  constructor(private maxParallelAgents: number = 10, scheduleTimeout: number = 90000) { // 默认 90 秒超时
+    this.scheduleTimeout = scheduleTimeout;
+    logger.info({ maxParallelAgents, scheduleTimeout }, 'Scheduler initialized with Lane Queues');
+  }
 
   /**
-   * Schedule DAG execution
+   * Schedule DAG execution using Lane Queues (with timeout protection)
    */
   async schedule(sessionId: string, dag: DAG, context: SchedulerContext): Promise<any> {
-    logger.info({ sessionId, maxParallel: this.maxParallelAgents }, 'Starting DAG schedule');
+    logger.info({ sessionId, maxParallel: this.maxParallelAgents }, 'Starting DAG schedule with Lane Queues');
 
     const results: Map<string, any> = new Map();
+    const startTime = Date.now();
     let round = 0;
 
+    // Enqueue all tasks in their appropriate lanes
+    const allTasks = dag.getAllTasks();
+    for (const task of allTasks) {
+      // Add default retry policy if not specified
+      if (!task.retryPolicy) {
+        task.retryPolicy = task.lane ? this.laneQueueManager.getLaneConfig(task.lane)?.retryPolicy :
+                                       RetryManager.getDefaultPolicy('linear');
+      }
+      this.laneQueueManager.enqueue(task);
+    }
+
+    logger.info({ totalTasks: allTasks.length }, 'Tasks enqueued in Lane Queues');
+
+    // Process tasks until all are complete (with timeout check)
     while (!dag.isComplete()) {
+      // 检查是否超时
+      const elapsed = Date.now() - startTime;
+      if (elapsed > this.scheduleTimeout) {
+        throw new Error(`DAG execution timeout after ${elapsed}ms (limit: ${this.scheduleTimeout}ms)`);
+      }
+
       round++;
       const readyTasks = dag.getReadyTasks();
 
@@ -54,11 +86,27 @@ export class Scheduler {
         continue;
       }
 
-      logger.info({ round, readyTaskCount: readyTasks.length }, 'Executing round');
+      logger.info({ round, readyTaskCount: readyTasks.length }, 'Processing round');
 
-      // Execute ready tasks in parallel
-      const executions = readyTasks.map((task) =>
-        this.executeTask(task, sessionId, context).catch((error) => ({
+      // Get next tasks from lane queues
+      const tasksToExecute: Task[] = [];
+      for (const task of readyTasks) {
+        const { task: nextTask, lane } = this.laneQueueManager.getNextTask();
+        if (nextTask && lane) {
+          tasksToExecute.push(nextTask);
+          this.laneQueueManager.markTaskStarted(nextTask.id);
+        }
+      }
+
+      if (tasksToExecute.length === 0) {
+        // No lanes available for execution, wait
+        await this.sleep(100);
+        continue;
+      }
+
+      // Execute tasks with retry logic
+      const executions = tasksToExecute.map((task) =>
+        this.executeTaskWithRetry(task, sessionId, context).catch((error) => ({
           taskId: task.id,
           error: error.message,
         }))
@@ -70,13 +118,37 @@ export class Scheduler {
       for (const result of taskResults) {
         if (result && result.taskId) {
           dag.markTaskComplete(result.taskId);
+          this.laneQueueManager.markTaskCompleted(result.taskId);
           results.set(result.taskId, result);
         }
+      }
+
+      // Log lane queue statistics
+      if (round % 5 === 0) {
+        const stats = this.laneQueueManager.getStats();
+        logger.debug({ round, laneStats: stats }, 'Lane Queue statistics');
       }
     }
 
     logger.info({ sessionId, totalResults: results.size }, 'DAG schedule completed');
     return Object.fromEntries(results.entries());
+  }
+
+  /**
+   * Execute a single task with retry logic
+   */
+  private async executeTaskWithRetry(
+    task: Task,
+    sessionId: string,
+    context: SchedulerContext
+  ): Promise<any> {
+    const retryPolicy = task.retryPolicy || this.retryManager.getDefaultPolicy('linear');
+
+    return this.retryManager.executeWithRetry(
+      () => this.executeTask(task, sessionId, context),
+      retryPolicy,
+      { operationName: `Task: ${task.name}`, taskId: task.id }
+    );
   }
 
   /**
@@ -170,5 +242,25 @@ export class Scheduler {
       await this.cancelTask(taskId);
     }
     logger.info('All tasks cancelled');
+  }
+
+  /**
+   * Sleep utility for delays
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Get scheduler statistics
+   */
+  getStats(): {
+    runningTasks: number;
+    laneQueueStats: Array<ReturnType<typeof getLaneQueueManager extends () => any ? any : any>>;
+  } {
+    return {
+      runningTasks: this.runningTasks.size,
+      laneQueueStats: this.laneQueueManager.getStats(),
+    };
   }
 }

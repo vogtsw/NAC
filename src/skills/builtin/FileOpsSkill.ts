@@ -1,11 +1,11 @@
 /**
  * File Operations Skill
- * Basic file system operations with security checks
+ * Enhanced file system operations with comprehensive security checks
  */
 
 import { Skill, SkillCategory, SkillContext, SkillResult } from '../types.js';
 import { promises as fs, existsSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join, dirname, resolve, basename, extname } from 'path';
 import { getLogger } from '../../monitoring/logger.js';
 
 const logger = getLogger('FileOpsSkill');
@@ -18,6 +18,40 @@ const ALLOWED_BASE_PATHS = [
   resolve(process.cwd(), 'config'),
   resolve(process.cwd(), 'src'),
   resolve(process.cwd(), 'memory'),
+];
+
+// File size limits (in bytes)
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB default
+const MAX_FILE_SIZE_WRITE = 50 * 1024 * 1024; // 50MB for write operations
+
+// Allowed file extensions
+const ALLOWED_FILE_TYPES = [
+  '.txt', '.md', '.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.config',
+  '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+  '.py', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.hpp',
+  '.html', '.css', '.scss', '.less', '.xml', '.svg',
+  '.sh', '.bash', '.zsh', '.fish', '.ps1',
+  '.gitignore', '.gitattributes', '.env.example', '.dockerignore',
+  '.sql', '.csv', '.tsv',
+];
+
+// Dangerous file patterns to block
+const DANGEROUS_FILE_PATTERNS = [
+  /\.exe$/i, /\.dll$/i, /\.so$/i, /\.dylib$/i,
+  /\.app$/i, /\.deb$/i, /\.rpm$/i,
+  /\.bat$/i, /\.cmd$/i, /\.scr$/i,
+  /\.vbs$/i, /\.js$/i, /\.jar$/i,
+  /\.com$/i, /\.pif$/i,
+  /\.key$/i, /\.pem$/i, /\.p12$/i, /\.pfx$/i,
+  /private\.key/i, /id_rsa/i, /id_ed25519/i,
+];
+
+// Dangerous file names
+const DANGEROUS_FILE_NAMES = [
+  '.env', '.env.local', '.env.production', '.env.development',
+  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+  '.git', '.svn', '.hg',
+  'docker-compose.yml', 'docker-compose.yaml',
 ];
 
 /**
@@ -33,7 +67,7 @@ function isPathAllowed(filePath: string): boolean {
 }
 
 /**
- * Validate and normalize file path
+ * Validate and normalize file path with enhanced security
  */
 function validatePath(filePath: string | undefined): { valid: boolean; error?: string; resolvedPath?: string } {
   if (!filePath) {
@@ -59,7 +93,99 @@ function validatePath(filePath: string | undefined): { valid: boolean; error?: s
     return { valid: false, error: '不允许访问node_modules目录' };
   }
 
+  // Check for dangerous file names
+  const fileName = basename(resolvedPath);
+  if (DANGEROUS_FILE_NAMES.some(dangerous => fileName === dangerous || fileName.startsWith(dangerous + '.'))) {
+    return {
+      valid: false,
+      error: `不允许访问危险文件: ${fileName}\n此类文件包含敏感配置或锁定信息`
+    };
+  }
+
   return { valid: true, resolvedPath };
+}
+
+/**
+ * Check file type against allowed extensions
+ */
+function validateFileType(filePath: string): { valid: boolean; error?: string } {
+  const ext = extname(filePath).toLowerCase();
+
+  // If no extension, allow it (could be directory or special file)
+  if (!ext) {
+    return { valid: true };
+  }
+
+  // Check against dangerous patterns
+  for (const pattern of DANGEROUS_FILE_PATTERNS) {
+    if (pattern.test(filePath)) {
+      return {
+        valid: false,
+        error: `不允许的文件类型: ${ext}\n此文件类型可能存在安全风险`
+      };
+    }
+  }
+
+  // For write operations, be more restrictive
+  if (!ALLOWED_FILE_TYPES.includes(ext)) {
+    logger.warn({ filePath, ext }, 'File type not in whitelist, but allowing for read operations');
+    // Still allow for read operations, but log warning
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Check file size limits
+ */
+function validateFileSize(size: number, operation: 'read' | 'write' = 'read'): { valid: boolean; error?: string } {
+  const maxSize = operation === 'write' ? MAX_FILE_SIZE_WRITE : MAX_FILE_SIZE;
+  const maxSizeMB = maxSize / (1024 * 1024);
+
+  if (size > maxSize) {
+    const sizeMB = (size / (1024 * 1024)).toFixed(2);
+    return {
+      valid: false,
+      error: `文件过大 (${sizeMB}MB), 最大允许 ${maxSizeMB}MB`
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Check for symlink attacks (TOCTOU prevention)
+ */
+async function checkSymlinkAttack(filePath: string): Promise<{ valid: boolean; error?: string; realPath?: string }> {
+  try {
+    const stats = await fs.lstat(filePath);
+
+    // Check if it's a symlink
+    if (stats.isSymbolicLink()) {
+      const realPath = await fs.realpath(filePath);
+
+      // Verify the real path is still within allowed boundaries
+      if (!isPathAllowed(realPath)) {
+        return {
+          valid: false,
+          error: `符号链接指向允许范围外的路径: ${realPath}\n可能存在安全风险`
+        };
+      }
+
+      return {
+        valid: true,
+        realPath,
+      };
+    }
+
+    return { valid: true, realPath: filePath };
+  } catch (error: any) {
+    // File doesn't exist yet, that's ok
+    if (error.code === 'ENOENT') {
+      return { valid: true, realPath: filePath };
+    }
+    throw error;
+  }
 }
 
 export const FileOpsSkill: Skill = {
@@ -93,11 +219,46 @@ export const FileOpsSkill: Skill = {
 
       const safePath = pathValidation.resolvedPath || path;
 
+      // Enhanced security: Check for symlink attacks
+      if (path && operation !== 'mkdir' && operation !== 'write') {
+        const symlinkCheck = await checkSymlinkAttack(safePath);
+        if (!symlinkCheck.valid) {
+          logger.warn({ operation, path: safePath }, 'Symlink attack detected');
+          return {
+            success: false,
+            error: symlinkCheck.error,
+          };
+        }
+      }
+
+      // Validate file type for read/write operations
+      if (path && (operation === 'read' || operation === 'write' || operation === 'modify')) {
+        const fileTypeCheck = validateFileType(safePath);
+        if (!fileTypeCheck.valid) {
+          logger.warn({ operation, path: safePath }, 'File type validation failed');
+          return {
+            success: false,
+            error: fileTypeCheck.error,
+          };
+        }
+      }
+
       logger.info({ operation, path: safePath }, `Executing file operation: ${operation}`);
 
       switch (operation) {
         case 'read': {
           const data = await fs.readFile(safePath, encoding as BufferEncoding);
+
+          // Check file size after reading
+          const sizeCheck = validateFileSize(data.length, 'read');
+          if (!sizeCheck.valid) {
+            logger.warn({ path: safePath, size: data.length }, 'File size exceeds limit');
+            return {
+              success: false,
+              error: sizeCheck.error,
+            };
+          }
+
           logger.info({ path: safePath, size: data.length }, 'File read successfully');
           return {
             success: true,
@@ -114,13 +275,39 @@ export const FileOpsSkill: Skill = {
             };
           }
 
+          // Check file size before writing
+          const contentSize = Buffer.byteLength(content, encoding as BufferEncoding);
+          const sizeCheck = validateFileSize(contentSize, 'write');
+          if (!sizeCheck.valid) {
+            logger.warn({ path: safePath, size: contentSize }, 'File size validation failed');
+            return {
+              success: false,
+              error: sizeCheck.error,
+            };
+          }
+
+          // Create directory with TOCTOU protection (atomic write)
           await fs.mkdir(dirname(safePath), { recursive: true });
-          await fs.writeFile(safePath, content, encoding as BufferEncoding);
-          logger.info({ path: safePath, bytesWritten: content.length }, 'File written successfully');
-          return {
-            success: true,
-            result: { path: safePath, bytesWritten: content.length },
-          };
+
+          // Use atomic write pattern to prevent TOCTOU vulnerabilities
+          // Write to temporary file first, then rename
+          const tempPath = `${safePath}.tmp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+          try {
+            await fs.writeFile(tempPath, content, encoding as BufferEncoding);
+            await fs.rename(tempPath, safePath); // Atomic operation
+            logger.info({ path: safePath, bytesWritten: contentSize }, 'File written successfully (atomic)');
+            return {
+              success: true,
+              result: { path: safePath, bytesWritten: contentSize },
+            };
+          } catch (error) {
+            // Clean up temp file on failure
+            try {
+              await fs.unlink(tempPath);
+            } catch {}
+            throw error;
+          }
         }
 
         case 'modify': {

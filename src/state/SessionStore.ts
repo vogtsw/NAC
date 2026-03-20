@@ -5,14 +5,10 @@
 
 import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Get project root directory (go up from src/state/)
-const PROJECT_ROOT = join(__dirname, '../../..');
+// Use process.cwd() to get project root - works in both dev and bundled code
+const PROJECT_ROOT = process.cwd();
 
 export interface SessionMessage {
   role: 'user' | 'assistant' | 'system';

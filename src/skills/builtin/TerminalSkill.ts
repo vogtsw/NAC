@@ -85,12 +85,12 @@ export const TerminalSkill: Skill = {
 
         // Get resource limits
         const limits = sandbox.getResourceLimits();
-        timeout = Math.min(timeout, limits.maxExecutionTime);
+        const adjustedTimeout = Math.min(timeout, limits.maxExecutionTime);
 
         logger.info({
           command,
           cwd,
-          timeout,
+          timeout: adjustedTimeout,
           sandboxEnforced: true
         }, 'Executing command with sandbox restrictions');
       } else {
@@ -100,7 +100,7 @@ export const TerminalSkill: Skill = {
       // Execute command
       const execOptions = {
         cwd,
-        timeout,
+        timeout: adjustedTimeout,
         env: { ...process.env, ...env },
         maxBuffer: 10 * 1024 * 1024, // 10MB
       };

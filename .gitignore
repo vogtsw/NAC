@@ -28,6 +28,14 @@ artifacts/
 data/
 *.log
 
+# Memory and session data (runtime generated)
+memory/sessions/*.md
+memory/artifacts/*/
+!memory/artifacts/.gitkeep
+
+# Claude Code local settings (may contain sensitive info)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
@@ -48,3 +56,14 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+
+# Test reports and summaries
+tests/reports/*.md
+tests/reports/*.json
+tests/cases/*.md
+COMMIT_READINESS_SUMMARY.md
+IMPLEMENTATION_SUMMARY.md
+QUICKSTART.md
+SECURITY_AUDIT_SUMMARY.md
+SECURITY_RELIABILITY_GUIDE.md
+START_COMMIT_NOW.md

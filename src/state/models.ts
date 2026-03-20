@@ -24,6 +24,15 @@ export interface Task {
   status?: 'pending' | 'running' | 'completed' | 'failed';
   result?: any;
   error?: string;
+  // New fields for reliability and optimization
+  priority?: number;           // 0-10, 0 highest
+  lane?: string;               // Lane identifier for queue management
+  idempotencyKey?: string;     // Key for deduplication
+  requiredResources?: string[]; // Resources needed for execution
+  timeout?: number;            // Task timeout in milliseconds
+  retryPolicy?: RetryPolicy;   // Custom retry policy
+  maxRetries?: number;         // Maximum retry attempts
+  retryCount?: number;         // Current retry attempt
 }
 
 export interface DAGNode {
@@ -125,4 +134,62 @@ export interface AgentProfileConfig {
   version: string;
   author?: string;
   systemPromptFile?: string;
+}
+
+/**
+ * Retry Policy Configuration
+ */
+export interface RetryPolicy {
+  maxAttempts: number;
+  strategy: 'exponential' | 'linear' | 'fixed';
+  timeout: number;       // Task timeout in milliseconds
+  baseDelay?: number;    // Base delay for backoff (ms)
+}
+
+/**
+ * Task Lane Configuration for Priority Queues
+ */
+export interface TaskLane {
+  priority: number;        // 0-10, 0 highest
+  maxConcurrency: number;  // Maximum concurrent tasks in this lane
+  timeout: number;         // Default timeout for tasks in this lane (ms)
+  retryPolicy: RetryPolicy;
+  description: string;
+}
+
+/**
+ * Session State Version Control
+ */
+export interface VersionedSessionState {
+  version: number;         // Version number for optimistic locking
+  lastModified: Date;      // Last modification timestamp
+}
+
+/**
+ * Permission Types for Skill Authorization
+ */
+export enum Permission {
+  FILE_READ = 'file:read',
+  FILE_WRITE = 'file:write',
+  FILE_DELETE = 'file:delete',
+  NETWORK_HTTP = 'network:http',
+  NETWORK_HTTPS = 'network:https',
+  SYSTEM_EXEC = 'system:exec',
+  ENV_READ = 'env:read',
+  ENV_WRITE = 'env:write',
+  LLM_ACCESS = 'llm:access',
+}
+
+/**
+ * Skill Permissions Configuration
+ */
+export interface SkillPermissions {
+  skillId: string;
+  permissions: Permission[];
+  resourceLimits?: {
+    maxFileSize: number;        // bytes
+    maxExecutionTime: number;   // milliseconds
+    allowedPaths: string[];
+  };
+  audit: boolean;
 }

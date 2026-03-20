@@ -73,6 +73,36 @@ export class AutomationAgent extends BaseAgent {
     const autoWorkflow = workflow ?? task.description;
     const autoSteps = steps;
 
+    // Handle web-search skill
+    if (task.requiredSkills?.includes('web-search')) {
+      // Extract search query from task - prefer explicit searchQuery field, then extract from description
+      let searchQuery: string;
+
+      if (task.searchQuery) {
+        // Use the pre-extracted searchQuery from DAGBuilder
+        searchQuery = task.searchQuery;
+      } else {
+        // Fallback to extraction from task description
+        searchQuery = this.extractSearchQuery(task);
+      }
+
+      const result = await this.useSkill(
+        'web-search',
+        { query: searchQuery, numResults: 5, language: 'zh-CN' },
+        {} as ExecutionContext
+      );
+
+      if (result.success) {
+        return {
+          taskId: task.id,
+          searchQuery,
+          ...result.result,
+        };
+      }
+
+      // If skill failed, fallback to LLM below
+    }
+
     // Use terminal skill if available
     if (task.requiredSkills?.includes('terminal-exec')) {
       const result = await this.useSkill(
@@ -99,6 +129,43 @@ export class AutomationAgent extends BaseAgent {
       taskId: task.id,
       automationPlan: response,
     };
+  }
+
+  /**
+   * Extract search query from task
+   * Removes search-related keywords to get the actual query
+   */
+  private extractSearchQuery(task: any): string {
+    let query = task.description || task.name || '';
+
+    // Remove common search keywords to get cleaner query
+    const searchPrefixes = [
+      'search for ', 'search ', '搜索', '查找', 'find ',
+      'look for ', 'lookup ', 'google ', '百度',
+      'search the ', '搜索关于', 'search about '
+    ];
+
+    for (const prefix of searchPrefixes) {
+      if (query.toLowerCase().startsWith(prefix)) {
+        query = query.substring(prefix.length).trim();
+        break;
+      }
+    }
+
+    // Remove common suffixes
+    const searchSuffixes = [
+      ' 的信息', '的信息', ' 的新闻', ' 的最新消息',
+      ' news', ' latest', ' information'
+    ];
+
+    for (const suffix of searchSuffixes) {
+      if (query.toLowerCase().endsWith(suffix)) {
+        query = query.substring(0, query.length - suffix.length).trim();
+        break;
+      }
+    }
+
+    return query || task.description || task.name;
   }
 
   private async executeCommand(task: any): Promise<any> {

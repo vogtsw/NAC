@@ -12,14 +12,18 @@ import { getLogger } from '../monitoring/logger.js';
 
 const logger = getLogger('CronScheduler');
 
+// node-cron ScheduledTask type (using any to avoid namespace issues)
+type CronJob = any;
+
 export class CronScheduler {
-  private jobs: Map<string, cron.ScheduledTask> = new Map();
-  private orchestrator: ReturnType<typeof getOrchestrator>;
+  private jobs: Map<string, CronJob> = new Map();
+  private orchestrator: ReturnType<typeof getOrchestrator> | null = null;
   private store: ReturnType<typeof getScheduledTaskStore>;
   private initialized: boolean = false;
 
   constructor() {
     this.store = getScheduledTaskStore();
+    this.orchestrator = null;
   }
 
   /**
@@ -62,7 +66,7 @@ export class CronScheduler {
 
     // Validate cron expression
     try {
-      new cronParser.CronExpression(cronConfig.expression);
+      cronParser.parseExpression(cronConfig.expression);
     } catch (error) {
       throw new Error(`Invalid cron expression: ${cronConfig.expression}`);
     }
@@ -88,7 +92,6 @@ export class CronScheduler {
     const job = cron.schedule(cronConfig.expression, async () => {
       await this.executeScheduledTask(task);
     }, {
-      scheduled: true,
       timezone: cronConfig.timezone || 'Asia/Shanghai',
     });
 
@@ -157,7 +160,7 @@ export class CronScheduler {
    */
   private getNextRunTime(cronExpression: string, timezone = 'Asia/Shanghai'): Date {
     try {
-      const interval = new cronParser.CronExpression(cronExpression, { tz: timezone });
+      const interval = cronParser.parseExpression(cronExpression, { tz: timezone });
       const nextDate = interval.next();
       return nextDate.toDate();
     } catch (error) {

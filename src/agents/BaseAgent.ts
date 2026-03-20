@@ -114,8 +114,9 @@ export abstract class BaseAgent {
 
   /**
    * Get system prompt for this agent type from config/agents/*.system.md
+   * Public API for tests and external access
    */
-  protected async getSystemPrompt(): Promise<string> {
+  async getSystemPrompt(): Promise<string> {
     if (this.cachedSystemPrompt) {
       return this.cachedSystemPrompt;
     }

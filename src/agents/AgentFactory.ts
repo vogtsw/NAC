@@ -50,9 +50,26 @@ export class AgentFactory {
     // Create agent with the actual LLM client
     const agent = new AgentClass(this.llm, this.skillManager);
 
+    // Store agent
     this.activeAgents.set(config.taskId, agent);
 
+    // Log for debugging
+    logger.debug({
+      agentType,
+      taskId: config.taskId,
+      hasExecute: typeof agent.execute === 'function',
+      hasGetStats: typeof agent.getStats === 'function',
+      agentConstructor: agent.constructor.name,
+    }, 'Agent created');
+
     return agent;
+  }
+
+  /**
+   * Alias for create() - for compatibility with tests
+   */
+  async createAgent(agentType: string, config: AgentConfig): Promise<BaseAgent> {
+    return this.create(agentType, config);
   }
 
   /**

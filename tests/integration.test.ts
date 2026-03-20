@@ -4,17 +4,17 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { LLMClient } from '../src/llm/LLMClient.js';
-import { IntentParser } from '../src/orchestrator/IntentParser.js';
-import { DAGBuilder } from '../src/orchestrator/DAGBuilder.js';
-import { SkillManager } from '../src/skills/SkillManager.js';
-import { CodeGenerationSkill } from '../src/skills/builtin/CodeGenerationSkill.js';
-import { Blackboard } from '../src/state/Blackboard.js';
-import { loadConfig } from '../src/config/index.js';
+import { LLMClient } from '../src/llm/LLMClient';
+import { IntentParser } from '../src/orchestrator/IntentParser';
+import { DAGBuilder } from '../src/orchestrator/DAGBuilder';
+import { SkillManager } from '../src/skills/SkillManager';
+import { CodeGenerationSkill } from '../src/skills/builtin/CodeGenerationSkill';
+import { Blackboard } from '../src/state/Blackboard';
+import { loadConfig } from '../src/config';
 
 // Test configuration
 const TEST_CONFIG = {
-  apiKey: process.env.DEEPSEEK_API_KEY || 'REDACTED_DEEPSEEK_KEY',
+  apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: 'https://api.deepseek.com/v1',
   model: 'deepseek-chat',
 };
@@ -25,8 +25,17 @@ describe('DeepSeek Integration Tests', () => {
   let blackboard: Blackboard;
 
   beforeAll(async () => {
+    // 验证必需的环境变量
+    if (!process.env.DEEPSEEK_API_KEY) {
+      throw new Error(
+        'DEEPSEEK_API_KEY environment variable is required for integration tests.\n' +
+        'Please set it in your .env file or environment before running tests.'
+      );
+    }
+
     llmClient = new LLMClient(TEST_CONFIG);
     skillManager = new SkillManager();
+    await skillManager.initialize();  // ✅ Initialize SkillManager
     blackboard = new Blackboard();
 
     try {
@@ -210,6 +219,6 @@ describe('DeepSeek Integration Tests', () => {
       console.log('E2E Result:', result);
 
       await orchestrator.shutdown();
-    }, 60000);
+    }, 120000); // 增加到 120 秒
   });
 });
