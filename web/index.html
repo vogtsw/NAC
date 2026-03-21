@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAC - NexusAgent-Cluster 控制台</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="header-left">
+                <h1>NexusAgent-Cluster</h1>
+                <span class="version">v4.1</span>
+            </div>
+            <div class="header-right">
+                <div class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span class="status-text" id="statusText">未连接</span>
+                </div>
+                <button class="btn btn-secondary" onclick="app.connect()">重新连接</button>
+            </div>
+        </header>
+
+        <!-- 主要内容区 -->
+        <div class="main-content">
+            <!-- 左侧：输入区 -->
+            <div class="left-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>任务输入</h2>
+                    </div>
+                    <div class="panel-body">
+                        <textarea
+                            id="userInput"
+                            placeholder="输入你的任务描述...&#10;&#10;例如：&#10;- 总结GitHub前10热门AI项目&#10;- 分析代码质量&#10;- 生成RESTful API"
+                            rows="8"
+                        ></textarea>
+
+                        <div class="input-actions">
+                            <button class="btn btn-primary" onclick="app.submitTask()">
+                                <span class="btn-icon">▶</span> 执行任务
+                            </button>
+                            <button class="btn btn-secondary" onclick="app.clearInput()">
+                                清空
+                            </button>
+                        </div>
+
+                        <!-- 快捷任务 -->
+                        <div class="quick-tasks">
+                            <h3>快捷任务</h3>
+                            <div class="task-buttons">
+                                <button class="btn btn-small" onclick="app.quickTask('github')">
+                                    GitHub热搜
+                                </button>
+                                <button class="btn btn-small" onclick="app.quickTask('code')">
+                                    代码分析
+                                </button>
+                                <button class="btn btn-small" onclick="app.quickTask('api')">
+                                    生成API
+                                </button>
+                                <button class="btn btn-small" onclick="app.quickTask('test')">
+                                    生成测试
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 系统信息 -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>系统信息</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">可用Agents</span>
+                                <span class="info-value" id="agentCount">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">可用Skills</span>
+                                <span class="info-value" id="skillCount">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">运行任务</span>
+                                <span class="info-value" id="runningTasks">0</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">完成任务</span>
+                                <span class="info-value" id="completedTasks">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：输出区 -->
+            <div class="right-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>执行结果</h2>
+                        <div class="panel-actions">
+                            <button class="btn btn-small" onclick="app.clearOutput()">清空输出</button>
+                            <button class="btn btn-small" onclick="app.exportOutput()">导出</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div id="output" class="output-container">
+                            <div class="output-placeholder">
+                                <div class="placeholder-icon">⚡</div>
+                                <div class="placeholder-text">
+                                    任务执行结果将显示在这里
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 执行日志 -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>执行日志</h2>
+                        <div class="panel-actions">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="autoScroll" checked>
+                                自动滚动
+                            </label>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div id="logs" class="logs-container"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载提示 -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">执行中...</div>
+    </div>
+
+    <!-- Toast 通知 -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

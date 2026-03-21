@@ -87,12 +87,23 @@ export class APIServer {
    * Register all routes
    */
   private async registerRoutes(): Promise<void> {
+    // Serve static files (web interface)
+    this.server.register(require('@fastify/static'), {
+      root: import.meta.url.slice(7) + '/../../web',
+      prefix: '/',
+    });
+
+    // Serve index.html at root
+    this.server.get('/', async (request, reply) => {
+      return reply.sendFile('index.html');
+    });
+
     // Health check
     this.server.get('/health', async (request, reply) => {
       reply.send({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        version: '0.1.0',
+        version: '4.1.0',
       });
     });
 

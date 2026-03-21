@@ -70,7 +70,8 @@
       "Bash(bash scripts/cleanup-project.sh)",
       "Bash(chmod +x scripts/prepare-for-commit.sh)",
       "Bash(bash scripts/prepare-for-commit.sh)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(pnpm install:*)"
     ]
   }
 }
