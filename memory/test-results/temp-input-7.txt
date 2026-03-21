@@ -1,0 +1,1 @@
+Design a data visualization solution for an IoT monitoring system with: real-time sensor data display (temperature, humidity, pressure), historical trend charts, anomaly alert visualization, recommended frontend chart libraries, and data storage structure design.

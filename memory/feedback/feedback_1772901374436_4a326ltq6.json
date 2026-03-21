@@ -1,0 +1,15 @@
+{
+  "sessionId": "test-file-ops-1772901103820",
+  "taskId": "test-file-ops-1772901103820_1772901374436",
+  "timestamp": "2026-03-07T16:36:14.436Z",
+  "agentType": "GenericAgent",
+  "systemPromptUsed": "System prompt for GenericAgent",
+  "skillsUsed": [],
+  "executionTime": 75462,
+  "success": true,
+  "totalAgents": 0,
+  "agentSequence": [],
+  "parallelGroups": 1,
+  "actualExecutionTime": 75462,
+  "feedbackId": "feedback_1772901374436_4a326ltq6"
+}

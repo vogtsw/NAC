@@ -1,0 +1,15 @@
+{
+  "sessionId": "cli-1772550757548",
+  "taskId": "cli-1772550757548_1772550913367",
+  "timestamp": "2026-03-03T15:15:13.367Z",
+  "agentType": "GenericAgent",
+  "systemPromptUsed": "System prompt for GenericAgent",
+  "skillsUsed": [],
+  "executionTime": 155817,
+  "success": true,
+  "totalAgents": 0,
+  "agentSequence": [],
+  "parallelGroups": 1,
+  "actualExecutionTime": 155817,
+  "feedbackId": "feedback_1772550913367_v26dp1z4h"
+}

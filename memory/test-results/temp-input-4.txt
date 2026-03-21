@@ -1,0 +1,1 @@
+Create a Spring Boot order management service with: Order entity and Repository, OrderService business logic, OrderController REST API, JPA database configuration, global exception handling, and integration tests.

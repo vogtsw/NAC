@@ -1,0 +1,1 @@
+Analyze the following sales data: Date,Product,Sales,Amount; 2024-01,ProductA,100,5000; 2024-01,ProductB,80,4000; 2024-02,ProductA,120,6000; 2024-02,ProductB,90,4500. Calculate: 1) Monthly total sales, 2) Best selling product, 3) Monthly growth rate, 4) Generate analysis report.

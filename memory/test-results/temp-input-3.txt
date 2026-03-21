@@ -1,0 +1,1 @@
+Create a Go user service microservice with: gRPC service definition (user.proto), user CRUD operations, PostgreSQL database integration, Docker configuration, Makefile build script, and error handling.

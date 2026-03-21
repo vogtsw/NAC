@@ -1,0 +1,8 @@
+{
+  "agentType": "SolidityContractAgent",
+  "taskId": "开发一个基于Solidity的Ethereum智能合约，用于代币发行和转账",
+  "configPath": "D:\\test\\agent\\jiqun\\config\\agents\\SolidityContractAgent.system.md",
+  "timestamp": "2026-03-06T15:20:27.690Z",
+  "sessionId": "cli-1772810415860",
+  "userId": "default"
+}

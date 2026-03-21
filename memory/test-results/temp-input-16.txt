@@ -1,0 +1,1 @@
+Develop a payment system with: payment interface design (Alipay, WeChat Pay integration), order state machine (pending, paid, refunded), payment callback handling, transaction log recording, reconciliation function, security review (signature verification, replay prevention), and performance testing (1000 TPS).

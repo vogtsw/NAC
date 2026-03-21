@@ -9,3 +9,5 @@ export { DAGBuilderV2, DAG as DAGV2 } from './DAGBuilderV2.js';
 export { Scheduler } from './Scheduler.js';
 export { AgentRouter, createAgentRouter } from './AgentRouter.js';
 export { AgentRegistry, getAgentRegistry, createAgentRegistry } from './AgentRegistry.js';
+export { DAGValidator } from './DAGValidator.js';
+export { TaskExecutor } from './TaskExecutor.js';

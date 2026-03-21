@@ -1,0 +1,1 @@
+Design complete CI/CD pipeline for a Node.js project: GitHub Actions workflow, code quality checks (ESLint, Prettier), unit tests (Jest), E2E tests (Playwright), Docker image build, Kubernetes deployment, and notification mechanism (Slack/Email).

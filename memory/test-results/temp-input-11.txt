@@ -1,0 +1,1 @@
+Generate architecture design document for a microservice e-commerce system with: service decomposition (user service, product service, order service, payment service), inter-service communication (REST/gRPC/message queue), database design for each service, caching strategy (Redis usage), service discovery, load balancing, and monitoring and logging solutions.

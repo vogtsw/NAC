@@ -1,3055 +1,420 @@
-# NexusAgent-Cluster 综合功能测试报告
+# NAC 工程测试方法论
 
-> **测试目标**: 对 pnpm cli chat 功能进行全面测试
+> **版本**: 2.0
 >
-> **测试日期**: 2026-03-03 (最新更新)
+> **最后更新**: 2026-03-08
 >
-> **测试环境**: Windows, Node.js 20+, TypeScript 5+
->
-> **API 配置**: Zhipu AI (glm-4-flash)
+> **测试目标**: 确保NAC工程的多Agent协作、Skill调用、并行调度等核心功能正常运行
 
 ---
 
-## 测试概览
+## 测试原则
 
-| 测试类别 | 用例数量 | 通过 | 失败 | 跳过 |
-|:---|:---:|:---:|:---:|:---:|
-| **基础功能测试** | 3 | 3 | 0 | 0 |
-| **技能管理测试** | 2 | 2 | 0 | 0 |
-| **技能执行测试** | 2 | 2 | 0 | 0 |
-| **架构组件测试** | 3 | 3 | 0 | 0 |
-| **用户配置管理测试** | 4 | 4 | 0 | 0 |
-| **定时任务管理测试** | 5 | 5 | 0 | 0 |
-| **API 服务测试** | 2 | 2 | 0 | 0 |
-| **复杂测试** | 3 | 3 | 0 | 0 |
-| **对话交互测试 (新)** | 2 | 2 | 0 | 0 |
-| **网络搜索功能测试 (新)** | 1 | 1 | 0 | 0 |
-| **总计** | **27** | **27** | **0** | **0** |
+### 1. 真实用户交互测试
+- **必须使用**: `pnpm cli chat` 交互模式
+- **禁止使用**: 简单输入如"你好"这类测试
+- **要求**: 使用复杂任务描述，涉及多Agent场景和Skill调用
 
-**成功率**: 100% (27/27)
+### 2. 测试驱动开发
+- 每次开发前先构建测试用例
+- 执行测试并记录结果到 `tests/reports/`
+- 基于测试结果进行功能改进
+
+### 3. 测试记录规范
+- 所有测试结果必须记录在 `tests.md` 中
+- 包含完整的测试过程、结果和问题分析
 
 ---
 
-## 真实用户体验测试 (pnpm cli chat 模式)
+## 测试环境配置
 
-### 测试说明
-本节测试严格模拟真实用户使用 `pnpm cli chat` 交互式聊天模式的体验。
-
-### TC-CHAT-001: 交互式聊天模式 - 任务管理API开发
-
-#### 测试环境
-- **模式**: pnpm cli chat (交互式聊天)
-- **测试时间**: 2026-03-03 23:43:31 - 23:45:32
-- **总耗时**: 约2分8秒 (121秒)
-- **会话ID**: chat-1772552617784
-
-#### 系统启动界面
-
-```
-============================================================
-           NexusAgent-Cluster 交互式界面
-============================================================
-
-  会话 ID: chat-1772552617784
-  LLM 提供商: zhipu
-  模型: glm-4-flash
-  最大并行 Agent: 10
-
-  ┌─ 系统状态 ──────────────────────────────
-  │ 活跃会话: 0
-  │ 可用技能: 6/6
-  │ 内置技能: 6
-  │ 自定义技能: 0
-  └──────────────────────────────────────
-```
-
-#### 用户输入
-```
-Develop a REST API for task management with TypeScript and Express,
-including database models, CRUD endpoints, validation, and unit tests.
-Provide complete implementation.
-```
-
-#### 执行过程
-
-**阶段1: 初始化** (15:43:31 - 15:43:37)
-- LLM客户端初始化: zhipu provider
-- 加载6个内置技能
-- Blackboard、CronScheduler、TaskScheduler初始化
-- FeedbackCollector初始化
-
-**阶段2: 意图解析** (15:43:37 - 15:43:42)
-- intentType: `code`
-- complexity: `medium`
-- estimatedSteps: 8
-
-**阶段3: DAG构建** (15:43:42 - 15:44:07)
-- 耗时: 25秒
-- 生成7个任务
-
-**阶段4: DAG调度执行** (15:44:07 - 15:45:31)
-
-| Round | readyTaskCount | 并行任务 | 说明 |
-|:---:|:---:|:---|:---|
-| 1 | 1 | step_1 (环境搭建) | CodeAgent |
-| 2 | 2 | step_2 (数据库设计), step_3 (API路由) | DataAgent + CodeAgent |
-| 3 | 2 | step_4 (数据库集成), step_5 (数据验证) | CodeAgent + CodeAgent |
-| 4 | 1 | step_6 (单元测试) | CodeAgent |
-| 5 | 1 | step_7 (API文档) | CodeAgent |
-
-**并行执行验证**:
-- Round 2 和 Round 3 都执行了并行任务
-- readyTaskCount = 2 证明并行调度工作正常
-
-#### 技能调用记录
-
-| 技能 | 调用次数 | 总耗时 | 成功率 |
-|:---|:---:|:---:|:---:|
-| code-generation | 7 | 118.3秒 | 100% (7/7) |
-
-#### 执行结果
-
-**任务完成情况**:
-
-| 任务ID | 任务名称 | Agent类型 | 耗时 | 状态 |
-|:---|:---|:---|:---:|:---:|
-| step_1 | 环境搭建 | CodeAgent | 10.8秒 | ✅ |
-| step_2 | 数据库设计 | DataAgent | 14.8秒 | ✅ |
-| step_3 | API路由定义 | CodeAgent | 24.2秒 | ✅ |
-| step_4 | 数据库集成 | CodeAgent | 19.2秒 | ✅ |
-| step_5 | 数据验证 | CodeAgent | 14.0秒 | ✅ |
-| step_6 | 单元测试 | CodeAgent | 15.1秒 | ✅ |
-| step_7 | API文档编写 | CodeAgent | 15.0秒 | ✅ |
-
-**输出质量**:
-- 生成了完整的TypeScript代码
-- 提供了数据库设计文档
-- 创建了API路由和控制器
-- 实现了数据验证逻辑
-- 编写了单元测试代码
-- 生成了API文档
-
-#### 用户体验观察
-
-**响应速度**:
-- 总响应时间: 1分54秒
-- 用户感知延迟: 可接受（实时显示进度）
-
-**界面交互**:
-- ✅ 清晰的会话信息显示
-- ✅ 实时任务执行进度
-- ✅ 彩色输出增强可读性
-- ✅ 执行完成状态明确
-
-**错误处理**:
-- ✅ 技能加载警告（WebSearchSkill未编译）
-- ✅ 错误提示清晰（readline closed是预期的退出行为）
-
----
-
-### 复杂测试结果汇总 (2026-03-03)
-
-| 测试ID | 测试内容 | Agent数 | 任务数 | 总耗时 | 并行提升 |
-|:---|:---|:---::|:---:|:---:|:---:|
-| TC-COMPLEX-001 | 任务管理API开发 | 3 | 7 | 2m36s | N/A |
-| TC-COMPLEX-002 | 电商微服务(并行) | 3 | 10 | 3m3s | **79%** |
-| TC-COMPLEX-003 | 技能调用链协作 | 4 | 5 | 1m39s | N/A |
-
-**关键发现**:
-- ✅ 多Agent协作正常工作
-- ✅ 并行调度性能显著提升(79%)
-- ✅ 技能调用链成功执行
-- ✅ DAG依赖关系正确处理
-- ✅ 跨Agent数据传递正常
-
----
-
-## 测试要求对照表
-
-| 用户需求 | 状态 | 说明 |
-|:---|:---:|:---|
-| 任务处理效率 | ✅ | 支持 DAG 调度和并行执行 (MAX_PARALLEL_AGENTS=10) |
-| 多轮对话记忆能力 | ✅ | Markdown 会话存储 (memory/sessions/) |
-| 用户个性化数据记忆 | ✅ | JSON 文件持久化，支持偏好配置和历史记录 |
-| 不同 Agent 智能创造 | ✅ | 5 种内置 Agent + 智能路由 |
-| 任务中 Skills 调用 | ✅ | 6 个内置技能，完整的技能管理系统 |
-| 定时自动执行任务 | ✅ | 支持 cron、once、delay 三种定时方式 |
-| 多用户依次执行 | ✅ | 异步任务处理，Promise.allSettled 支持 |
-| 任务更改理解 | ✅ | 会话历史上下文管理 |
-
----
-
-## 最新测试结果 (2026-03-01)
-
-### 新增功能测试：API 服务
-
+### API配置
 ```bash
-# 测试启动 API 服务器
-pnpm cli serve
-# ✅ 通过 - 服务器成功启动，监听 0.0.0.0:3000
-
-# 测试健康检查端点
-curl http://localhost:3000/health
-# ✅ 通过 - 返回 {"status":"ok","timestamp":"...","version":"0.1.0"}
-
-# 测试技能列表端点
-curl http://localhost:3000/api/v1/skills
-# ✅ 通过 - 返回 6 个内置技能的完整信息
-
-# 测试 Agents 列表端点
-curl http://localhost:3000/api/v1/agents
-# ✅ 通过 - 返回活动 Agent 列表
+# 当前使用智谱AI模型
+ZHIPU_API_KEY=720a710f969c4205ba062583c96171a2.lu1a4JdyoBxWNp0I
+ZHIPU_MODEL=glm-4-flash
 ```
 
-### API 服务核心功能验证
-- ✅ Fastify 服务器成功启动
-- ✅ WebSocket 插件注册成功
-- ✅ 所有组件初始化正常（Orchestrator、SkillManager）
-- ✅ 路由注册成功（健康检查、任务、技能、Agent 端点）
-- ✅ 错误处理器正常工作
-
-### API 端点测试结果
-| 端点 | 方法 | 状态 | 说明 |
-|:---|:---:|:---:|:---|
-| `/health` | GET | ✅ | 健康检查正常 |
-| `/api/v1/skills` | GET | ✅ | 返回 6 个技能 |
-| `/api/v1/agents` | GET | ✅ | 返回 Agent 列表 |
-| `/api/v1/tasks/submit` | POST | ✅ | 端点已注册 |
-| `/ws` | WS | ✅ | WebSocket 路由已注册 |
-
----
-
-### 新增功能测试：用户配置管理
-
+### 测试模式
 ```bash
-# 测试用户配置查看
-pnpm cli user profile
-# ✅ 通过 - 显示用户 ID、创建时间、偏好配置、统计数据
+# 启动交互式聊天模式
+pnpm cli chat
 
-# 测试用户统计查看
-pnpm cli user stats
-# ✅ 通过 - 显示交互统计、最常用 Agent、最常用技能
-
-# 测试用户偏好查看
-pnpm cli user preferences
-# ✅ 通过 - 显示完整的用户偏好配置
-
-# 测试用户历史查看
-pnpm cli user history
-# ✅ 通过 - 显示用户交互历史记录
+# 系统会显示：
+# - 会话 ID
+# - LLM 提供商和模型
+# - 最大并行 Agent 数
+# - 系统状态（活跃会话、可用技能）
 ```
 
-### 新增功能测试：定时任务管理
+---
 
+## 测试分类
+
+### 1. 单元测试 (Unit Tests)
+**位置**: `tests/unit/`
+**目标**: 测试单个函数、类或组件
+**工具**: Vitest
+**运行**: `pnpm test`
+
+### 2. 集成测试 (Integration Tests)
+**位置**: `tests/integration/`
+**目标**: 测试模块间的交互
+**工具**: Vitest
+**运行**: `pnpm test:integration`
+
+### 3. 端到端测试 (E2E Tests)
+**位置**: `tests/e2e/`
+**目标**: 测试完整的用户场景
+**工具**: Playwright
+**运行**: `pnpm test:e2e`
+
+### 4. 交互式聊天测试 (Chat Tests)
+**位置**: `tests/cases/`
+**目标**: 验证多Agent协作和Skill调用
+**工具**: `pnpm cli chat`
+**运行**: 手动执行每个测试用例
+
+---
+
+## 测试用例组织结构
+
+```
+tests/
+├── cases/              # 测试用例文档
+│   ├── README.md       # 测试用例索引
+│   ├── test-cases-20.md           # 20个复杂测试用例
+│   └── test-complex-cases.md      # 复杂测试用例集
+├── scripts/            # 测试脚本
+│   ├── test-runner.ts
+│   ├── test-runner-auto.ts
+│   ├── test-suite.ts
+│   └── ...
+├── reports/            # 测试报告
+│   ├── test-report.md
+│   └── test-report-20cases.md
+├── unit/               # 单元测试
+├── integration/        # 集成测试
+└── e2e/                # 端到端测试
+```
+
+---
+
+## 核心功能验证
+
+### Agent智能路由验证
+**目标**: 验证系统是否为任务选择正确的Agent类型
+
+**测试方法**:
+1. 选择不同类型的测试用例（代码开发、数据分析、文档处理等）
+2. 观察 `Intent 解析` 结果
+3. 验证分配的Agent类型是否与任务类型匹配
+
+**预期结果**:
+- 代码任务 → CodeAgentn
+- 数据任务 → DataAgent
+- 分析任务 → AnalysisAgent
+- 自动化任务 → AutomationAgent
+- 通用任务 → GenericAgent
+
+### 多Agent协作验证
+**目标**: 验证复杂任务是否触发多个Agent协作
+
+**测试方法**:
+1. 选择复杂测试用例（如TC-018电商全栈应用）
+2. 观察DAG构建的任务数量
+3. 验证不同Agent类型的分配情况
+
+**预期结果**:
+- DAG包含多个任务
+- 任务分配给不同类型的Agent
+- Agent间有依赖关系
+
+### Skill调用验证
+**目标**: 验证Skills是否正确匹配和调用
+
+**测试方法**:
+1. 选择需要特定Skill的测试用例
+2. 观察Agent执行过程中的Skill调用记录
+3. 验证Skill执行结果
+
+**预期结果**:
+- Skills正确识别任务需求
+- 调用正确的Skill函数
+- 返回预期的执行结果
+
+### DAG并行调度验证
+**目标**: 验证系统是否识别可并行任务
+
+**测试方法**:
+1. 选择包含多个独立任务的测试用例
+2. 观察DAG调度日志中的 `Round X: 并行执行 N 个任务`
+3. 分析任务依赖关系图
+
+**预期结果**:
+- 识别出无依赖关系的任务
+- 同一轮次中并行执行多个任务
+- 不同Agent的任务可以并行
+
+### 上下文记忆验证
+**目标**: 验证多轮对话是否保持上下文
+
+**测试方法**:
+1. 在同一会话中进行多轮对话
+2. 第一轮：建立上下文（如"创建一个用户API"）
+3. 第二轮：引用上下文（如"添加登录功能"）
+4. 验证系统是否记住之前的对话内容
+
+**预期结果**:
+- 系统记住之前的对话内容
+- 后续任务能够基于前面的上下文执行
+- 会话状态正确维护
+
+### Agent自学习验证
+**目标**: 验证系统是否根据新任务类型生成新的Agent配置
+
+**测试方法**:
+1. 执行一个现有Agent无法很好处理的任务
+2. 检查 `config/agents/` 目录
+3. 验证是否生成新的Agent配置文件
+
+**预期结果**:
+- 新任务类型触发新Agent配置生成
+- 配置文件符合Agent规范
+- 系统能够加载和使用新Agent
+
+---
+
+## 测试执行流程
+
+### 1. 测试准备
 ```bash
-# 测试定时任务列表
-pnpm cli schedule list
-# ✅ 通过 - 显示所有定时任务（初始为空）
+# 确保依赖已安装
+pnpm install
 
-# 测试创建延迟任务
-pnpm cli schedule delay 10000 "测试任务"
-# ✅ 通过 - 成功创建延迟任务，10秒后自动执行
+# 检查API配置
+cat .env | grep ZHIPU_API_KEY
 
-# 测试查看任务详情
-pnpm cli schedule info <taskId>
-# ✅ 通过 - 显示任务详细信息
-
-# 测试查看执行历史
-pnpm cli schedule executions <taskId>
-# ✅ 通过 - 显示任务执行历史
-
-# 测试取消任务
-pnpm cli schedule cancel <taskId>
-# ✅ 通过 - 成功取消定时任务
+# 启动系统
+pnpm cli chat
 ```
 
-### 核心功能验证
-
-#### 用户个性化数据记忆
-- ✅ 用户配置自动创建（默认用户 ID: "default"）
-- ✅ 交互历史自动记录（异步，不阻塞主流程）
-- ✅ 用户统计自动更新（Agent 使用、技能使用、执行时间）
-- ✅ 深度合并更新用户偏好
-
-#### 定时任务调度
-- ✅ Cron 表达式验证和解析
-- ✅ 一次性定时任务（once）
-- ✅ 延迟任务（delay）
-- ✅ 周期性任务（cron）
-- ✅ 任务状态管理（active/paused/completed）
-- ✅ 执行历史记录
-- ✅ 任务恢复（启动时自动加载活跃任务）
-
----
-
-## 实现细节
-
-### 新增文件列表
-
-| 文件 | 功能 |
-|:---|:---|
-| `src/state/models_extended.ts` | 扩展类型定义 |
-| `src/state/UserStore.ts` | 用户配置持久化 |
-| `src/state/UserProfile.ts` | 用户配置业务逻辑 |
-| `src/state/ScheduledTaskStore.ts` | 定时任务持久化 |
-| `src/scheduler/CronScheduler.ts` | Cron 定时调度 |
-| `src/scheduler/Scheduler.ts` | 统一任务调度 |
-
-### 修改文件列表
-
-| 文件 | 修改内容 |
-|:---|:---|
-| `src/cli.ts` | 新增 user 和 schedule 命令处理 |
-| `src/orchestrator/Orchestrator.ts` | 集成 UserProfile 和 TaskScheduler |
-
----
-
-## 测试执行摘要 (之前)
-
+### 2. 选择测试用例
 ```bash
-# 执行命令
-pnpm cli status
-pnpm cli skills list
-pnpm cli skills stats
-pnpm cli skill info code-generation
-pnpm cli skills search code
-pnpm cli skill test file-ops
-pnpm cli skill test terminal-exec
+# 查看可用测试用例
+ls tests/cases/
+
+# 阅读测试用例详情
+cat tests/cases/test-cases-20.md
 ```
 
-### 成功的测试 ✅
-
-| 用例 ID | 测试内容 | 状态 | 结果 |
-|:---|:---|:---:|:---|
-| TC-CLI-001 | 系统状态检查 | ✅ | LLM Provider: zhipu, Model: glm-4-flash |
-| TC-CLI-002 | 技能列表 | ✅ | 6 个内置技能全部显示 |
-| TC-CLI-003 | 技能统计 | ✅ | Total: 6, Built-in: 6, Enabled: 6 |
-| TC-CLI-004 | 技能信息查询 | ✅ | code-generation 信息正确 |
-| TC-CLI-005 | 技能搜索 | ✅ | 搜索功能正常 |
-| TC-CLI-006 | file-ops 技能执行 | ✅ | 成功读取 package.json (1ms) |
-| TC-CLI-007 | terminal-exec 技能执行 | ✅ | 成功执行 echo 命令 (14ms) |
-| TC-ARCH-001 | Agent 文件检查 | ✅ | 找到 8 个 Agent 文件 |
-| TC-ARCH-002 | 技能文件检查 | ✅ | 找到 6 个技能文件 |
-| TC-ARCH-003 | 配置文件检查 | ✅ | .env 文件存在 |
-
-### 技能列表详情
-
-```
-=== Available Skills ===
-
-CODE:
-  ✓ code-generation v1.0.0 [builtin]
-     Generate code in various programming languages
-  ✓ code-review v1.0.0 [builtin]
-     Review code for quality, security, and best practices
-
-FILE:
-  ✓ file-ops v1.0.0 [builtin]
-     File system operations (read, write, list, search)
-
-TERMINAL:
-  ✓ terminal-exec v1.0.0 [builtin]
-     Execute shell commands
-
-DATA:
-  ✓ data-analysis v1.0.0 [builtin]
-     Analyze and process data
-
-DOCUMENT:
-  ✓ docx-processing v1.0.0 [builtin]
-     处理 Word 文档 (.docx) 的读写操作，支持内容提取和转换
-
-Total: 6 skills
-```
-
-### 技能执行测试结果
-
-#### file-ops 技能测试
-```json
-{
-  "success": true,
-  "output": {
-    "content": "{\n  \"name\": \"nexus-agent-cluster\",\n  ...",
-    "path": "package.json",
-    "size": 1026
-  }
-}
-```
-
-#### terminal-exec 技能测试
-```json
-{
-  "success": true,
-  "output": {
-    "command": "echo \"Hello from skill test\"",
-    "stdout": "\"Hello from skill test\"\r\n",
-    "stderr": "",
-    "exitCode": 0
-  }
-}
-```
-
-### 待实现功能 ○
-
-| 用例 ID | 功能 | 状态 | 说明 |
-|:---|:---|:---:|:---|
-| TC-FEATURE-001 | 定时任务功能 | ○ | 需要添加调度器模块 |
-| TC-FEATURE-002 | 多用户会话隔离 | ○ | 需要添加用户管理系统 |
-| TC-FEATURE-003 | 实时任务监控 | ○ | 需要添加 WebSocket 支持 |
-
----
-
-## 详细测试记录
-测试文件: tests/core-validation.test.ts
-执行时间: 22:44:16 - 22:44:41 (24.75s)
-结果: 13 passed, 15 failed
-通过率: 46.4%
-```
-
-### 成功的测试 ✅
-
-| 用例 ID | 测试内容 | 状态 |
-|:---|:---|:---:|
-| TC-LLM-001 | LLMClient 多 Provider 支持 | ✅ |
-| TC-LLM-002 | PromptBuilder 上下文组装 | ✅ |
-| TC-LLM-003 | Prompt 模板工作 | ✅ |
-| TC-SKILL-001 | 内置技能加载 (6个) | ✅ |
-| TC-SKILL-002 | 技能参数验证 | ✅ |
-| TC-SKILL-003 | 按任务类型查找技能 | ✅ |
-| TC-AGENT-001 | 创建所有 Agent 类型 (5种) | ✅ |
-| TC-AGENT-002 | Agent 系统提示词获取 | ✅ |
-| TC-ROUTER-001 | AgentRegistry 注册内置 Agent | ✅ |
-| TC-ROUTER-002 | AgentRegistry 能力查询 | ✅ |
-| TC-ROUTER-003 | AgentRegistry 统计信息 | ✅ |
-| TC-ROUTER-004 | AgentRouter 降级策略 | ✅ |
-| TC-BB-001 | Blackboard 共享状态 | ✅ |
-| TC-BB-002 | EventBus 发布订阅 | ✅ |
-| TC-INTENT-001 | Intent Parser 意图解析 | ✅ |
-| TC-DAG-001 | DAG 构建任务依赖图 | ✅ |
-| TC-DAG-002 | DAG 拓扑排序 | ✅ |
-| TC-ORCH-001 | SessionStore MD 文件存储 | ✅ |
-
-### 失败的测试 ❌
-
-| 用例 ID | 失败原因 | 修复方案 |
-|:---|:---|:---|
-| 模块导入失败 | 使用 `require()` 导入 `.js` 文件 | 改用 ES6 `import` |
-| IntentParser 未找到 | 路径问题 | 已实现，修正导入 |
-| DAGBuilder 未找到 | 路径问题 | 已实现，修正导入 |
-| Scheduler 未找到 | 路径问题 | 已实现，修正导入 |
-| Orchestrator 未找到 | 路径问题 | 已实现，修正导入 |
-| API server 未找到 | 路径问题 | 已实现，修正导入 |
-
-### 功能验证结果
-
-#### ✅ 已满足 task.md 要求
-
-1. **L2-1: LLM 抽象层** - 完全实现
-   - LLMClient 支持多 Provider ✅
-   - PromptBuilder 上下文组装 ✅
-   - Prompt 模板系统 ✅
-
-2. **L2-2: Skills 系统** - 完全实现
-   - 6 个内置技能加载成功 ✅
-   - 技能参数验证 ✅
-   - 按任务类型查找技能 ✅
-   - 外部技能加载 (2个) ✅
-
-3. **L2-3: Agent Factory** - 完全实现
-   - 5 种 Agent 类型创建 ✅
-   - Agent 系统提示词从 config/agents/ 读取 ✅
-
-4. **L2-3.5: 智能路由系统** - 完全实现
-   - AgentRegistry 动态注册 ✅
-   - AgentRouter 语义匹配 ✅
-   - 降级策略 ✅
-   - 自定义 Agent 自动加载 ✅
-
-5. **L2-4: Blackboard** - 完全实现
-   - 共享状态管理 ✅
-   - EventBus 事件系统 ✅
-
-6. **L2-5: Intent Parser** - 已实现
-   - 意图解析功能 ✅
-
-7. **L2-6: DAG Builder** - 已实现
-   - DAG 构建功能 ✅
-   - 拓扑排序 ✅
-   - DAGBuilderV2 智能路由集成 ✅
-
-8. **L2-7: Scheduler** - 已实现
-   - 并行调度功能 ✅
-
-9. **L2-8: Orchestrator** - 已实现
-   - SessionStore MD 存储 ✅
-
-10. **L2-10: API 服务** - 已实现
-    - Fastify 服务器 ✅
-
-#### 📊 统计信息
-
-```
-=== AgentRegistry 统计 ===
-总 Agent: 6
-  - 内置 Agent: 5 (CodeAgent, DataAgent, AnalysisAgent, AutomationAgent, GenericAgent)
-  - 自定义 Agent: 1 (DocumentAgent)
-总 Skill 数: 8
-  - 按 Skill 分组的 Agent 映射正常
-```
-
-#### 🎯 核心发现
-
-1. **智能路由系统正常工作**
-   - DocumentAgent 被自动加载
-   - Agent 能力描述机制完整
-   - 降级策略有效
-
-2. **Skills 系统完善**
-   - 6 个内置技能全部加载
-   - 2 个外部技能 (example-package) 成功加载
-   - 技能注册表完整
-
-3. **文档处理能力已具备**
-   - DocxProcessingSkill 已注册
-   - DocumentAgent 已集成
-
----
-
----
-
-## L2-1: LLM 抽象层测试
-
-### TC-LLM-001: 多模型支持测试
-
-**测试目的**: 验证 LLMClient 支持多个 LLM Provider
-
-**测试代码**:
-```typescript
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-// 测试不同 Provider
-const providers = ['zhipu', 'deepseek', 'openai'];
-
-for (const provider of providers) {
-  const client = getLLMClient(provider);
-  const result = await client.complete('Say "OK"');
-  console.log(`${provider}: ${result}`);
-}
-```
-
-**预期输出**:
-```
-zhipu: OK
-deepseek: OK
-openai: OK
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-LLM-002: PromptBuilder 上下文组装测试
-
-**测试目的**: 验证 PromptBuilder 能正确组装完整上下文
-
-**测试代码**:
-```typescript
-import { getPromptBuilder } from '../src/llm/PromptBuilder.js';
-
-const builder = getPromptBuilder();
-const context = await builder.buildContext({
-  agentType: 'CodeAgent',
-  sessionId: 'test-session',
-  userInput: '生成一个 Fibonacci 函数',
-  includeSessionHistory: true,
-  includeSkills: true,
-});
-
-console.log('=== 上下文组装结果 ===');
-console.log(context);
-console.log('=== 上下文长度 ===', context.length);
-```
-
-**预期输出**:
-- 包含 CodeAgent 系统提示词
-- 包含会话历史（如果存在）
-- 包含可用技能列表
-- 包含用户输入
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-LLM-003: Prompt 模板测试
-
-**测试目的**: 验证 prompts.ts 中的模板是否正常工作
-
-**测试代码**:
-```typescript
-import { IntentAnalysisPrompt, TaskPlanningPrompt } from '../src/llm/prompts.js';
-
-// 测试意图分析 Prompt
-const intentPrompt = IntentAnalysisPrompt.format('帮我生成一个用户登录 API');
-console.log('=== 意图分析 Prompt ===');
-console.log(intentPrompt);
-
-// 测试任务规划 Prompt
-const planningPrompt = TaskPlanningPrompt.format({
-  intent: 'code',
-  primaryGoal: '生成用户登录 API',
-  capabilities: 'code_gen, api_design',
-  complexity: 'medium',
-});
-console.log('=== 任务规划 Prompt ===');
-console.log(planningPrompt);
-```
-
-**预期输出**:
-- 正确生成 JSON 格式的分析请求
-- 包含所有必需字段
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-2: Skills 系统测试
-
-### TC-SKILL-001: 内置技能加载测试
-
-**测试目的**: 验证所有内置技能能正确加载
-
-**测试代码**:
-```typescript
-import { getSkillManager } from '../src/skills/SkillManager.js';
-
-const skillManager = getSkillManager();
-await skillManager.initialize();
-
-const builtinSkills = skillManager.listBuiltinSkills();
-console.log('=== 内置技能列表 ===');
-console.table(builtinSkills);
-
-// 验证必需的技能存在
-const requiredSkills = [
-  'code-generation',
-  'code-review',
-  'data-analysis',
-  'file-ops',
-  'terminal-exec',
-  'docx-processing',
-];
-
-for (const skill of requiredSkills) {
-  const exists = skillManager.hasSkill(skill);
-  console.log(`${skill}: ${exists ? '✅' : '❌'}`);
-}
-```
-
-**预期输出**:
-```
-=== 内置技能列表 ===
-┌─────────┬─────────────────┬─────────────┬──────────┬─────────┐
-│ (index) │      name       │ description │  category │ enabled │
-├─────────┼─────────────────┼─────────────┼──────────┼─────────┤
-│    0    │ code-generation │   代码生成   │   code   │   true  │
-│    1    │   code-review   │   代码审查   │   code   │   true  │
-│    2    │  data-analysis  │   数据分析   │   data   │   true  │
-│    3    │    file-ops     │   文件操作   │   file   │   true  │
-│    4    │  terminal-exec  │   终端执行   │ terminal │   true  │
-│    5    │ docx-processing │  文档处理    │ document │   true  │
-└─────────┴─────────────────┴─────────────┴──────────┴─────────┘
-
-code-generation: ✅
-code-review: ✅
-data-analysis: ✅
-file-ops: ✅
-terminal-exec: ✅
-docx-processing: ✅
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-SKILL-002: 技能执行测试
-
-**测试目的**: 验证技能能正确执行
-
-**测试提示词**:
-```
-使用 code-generation 技能生成一个 TypeScript 函数，计算斐波那契数列的第 n 项
-```
-
-**预期输出**:
-- 正确的 TypeScript 函数
-- 包含类型定义
-- 有基本注释
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-SKILL-003: 技能参数验证测试
-
-**测试目的**: 验证技能参数验证机制
-
-**测试代码**:
-```typescript
-import { getSkillManager } from '../src/skills/SkillManager.js';
-
-const skillManager = getSkillManager();
-await skillManager.initialize();
-
-// 测试缺少必需参数
-const result = await skillManager.executeSkill('code-generation', {
-  // 缺少 language 和 requirements
-});
-
-console.log('参数验证结果:', result);
-console.log('应该返回错误:', !result.success);
-```
-
-**预期输出**:
-```
-参数验证结果: { success: false, error: "Invalid parameters for skill: code-generation" }
-应该返回错误: true
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-SKILL-004: 外部技能加载测试
-
-**测试目的**: 验证 skills/ 目录下的外部技能能被加载
-
-**测试代码**:
-```typescript
-import { getSkillManager } from '../src/skills/SkillManager.js';
-
-const skillManager = getSkillManager();
-await skillManager.initialize();
-
-const externalSkills = skillManager.listExternalSkills();
-console.log('=== 外部技能数量 ===', externalSkills.length);
-console.log('=== 外部技能列表 ===');
-console.table(externalSkills.map(s => ({
-  name: s.name,
-  description: s.description,
-  enabled: s.enabled,
-})));
-```
-
-**预期输出**:
-```
-=== 外部技能数量 === > 0
-=== 外部技能列表 ===
-显示 skills/ 目录下的技能包
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-3: Agent Factory 测试
-
-### TC-AGENT-001: Agent 创建测试
-
-**测试目的**: 验证所有 Agent 类型能正确创建
-
-**测试代码**:
-```typescript
-import { AgentFactory } from '../src/agents/AgentFactory.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-import { getSkillManager } from '../src/skills/SkillManager.js';
-
-const llm = getLLMClient();
-const skillManager = await getSkillManager();
-skillManager.initialize();
-const factory = new AgentFactory(llm);
-
-const agentTypes = [
-  'CodeAgent',
-  'DataAgent',
-  'AnalysisAgent',
-  'AutomationAgent',
-  'GenericAgent',
-];
-
-console.log('=== Agent 创建测试 ===');
-for (const type of agentTypes) {
-  try {
-    const agent = factory.createAgent(type, { taskId: 'test-001' });
-    console.log(`${type}: ✅ 创建成功`);
-    console.log(`  - 状态: ${agent.getStatus()}`);
-    console.log(`  - 统计:`, agent.getStats());
-  } catch (error) {
-    console.log(`${type}: ❌ 创建失败 - ${error.message}`);
-  }
-}
-```
-
-**预期输出**:
-```
-=== Agent 创建测试 ===
-CodeAgent: ✅ 创建成功
-  - 状态: idle
-  - 统计: { agentType: 'CodeAgent', status: 'idle', tasksCompleted: 0, ... }
-DataAgent: ✅ 创建成功
+### 3. 执行测试
+```bash
+# 在聊天界面输入测试用例的完整描述
+# 例如：
+开发一个完整的任务管理系统 RESTful API，要求：
+1. 使用 TypeScript + Express + PostgreSQL
+2. 包含用户认证（JWT）、任务CRUD、标签管理、优先级设置
+3. 实现数据验证中间件、错误处理、日志记录
 ...
 ```
 
-**测试状态**: ⏳ 待测试
+### 4. 记录结果
+- Intent解析结果
+- DAG构建情况
+- Agent分配和协作
+- Skills调用记录
+- 执行时间和成功率
+- 输出质量评估
+- 错误和异常情况
+
+### 5. 生成报告
+```bash
+# 将测试结果记录到
+tests/reports/test-report-[date].md
+```
 
 ---
 
-### TC-AGENT-002: Agent 系统提示词测试
+## 测试质量标准
 
-**测试目的**: 验证 Agent 能正确加载系统提示词
+### 通过标准
+- ✅ Intent解析正确
+- ✅ Agent分配合理
+- ✅ DAG构建正确
+- ✅ Skills调用成功
+- ✅ 输出质量良好
+- ✅ 无致命错误
 
-**测试代码**:
-```typescript
-import { CodeAgent } from '../src/agents/CodeAgent.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-import { getSkillManager } from '../src/skills/SkillManager.js';
+### 失败标准
+- ❌ Intent解析错误
+- ❌ Agent分配不合理
+- ❌ DAG构建失败
+- ❌ Skills调用失败
+- ❌ 输出质量差
+- ❌ 出现致命错误
 
-const llm = getLLMClient();
-const skillManager = await getSkillManager();
-skillManager.initialize();
-
-const codeAgent = new CodeAgent(llm, skillManager);
-const systemPrompt = await codeAgent.getSystemPrompt();
-
-console.log('=== CodeAgent 系统提示词 ===');
-console.log(systemPrompt);
-console.log('=== 提示词长度 ===', systemPrompt.length);
-```
-
-**预期输出**:
-- 从 `config/agents/CodeAgent.system.md` 加载的内容
-- 包含核心职责和工作原则
-
-**测试状态**: ⏳ 待测试
+### 警告标准
+- ⚠️ Intent解析不够准确
+- ⚠️ Agent分配可以优化
+- ⚠️ 部分Skills调用失败
+- ⚠️ 输出质量需要改进
+- ⚠️ 存在非致命错误
 
 ---
 
-### TC-AGENT-003: Agent 执行测试
+## 测试报告模板
 
-**测试目的**: 验证 Agent 能正确执行任务
+```markdown
+# 测试执行报告
 
-**测试提示词**:
+> **测试日期**: YYYY-MM-DD
+> **测试模式**: pnpm cli chat
+> **API配置**: Zhipu AI (glm-4-flash)
+
+## 执行摘要
+
+| 测试ID | 测试名称 | Intent类型 | 复杂度 | 任务数 | Agents使用 | 耗时 | 状态 |
+|:---|:---|:---:|:---:|:---:|:---|:---:|:---:|
+| TC-XXX | 测试名称 | code | medium | 5 | CodeAgent, DataAgent | 120s | ✅ |
+
+## 关键发现
+
+### 1. 发现的问题
+- **问题描述**: 具体描述发现的问题
+- **影响范围**: 问题描述影响的范围
+- **建议修复**: 建议的修复方案
+
+### 2. 性能分析
+- **平均响应时间**: XX秒
+- **最长任务时间**: XX秒
+- **并行执行效率**: XX%
+
+### 3. Agent协作分析
+- **Agent分配合理性**: ✅/⚠️/❌
+- **并行度**: 高/中/低
+- **协作效率**: XX%
+
+## 详细测试结果
+
+### TC-XXX: 测试名称
+
+**输入**: [测试输入内容]
+
+**执行过程**:
 ```
-使用 CodeAgent 生成一个 TypeScript 函数，实现快速排序算法
-```
-
-**预期输出**:
-- 正确的 TypeScript 快速排序实现
-- 有类型定义
-- 时间复杂度注释
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-3.5: 智能路由系统测试
-
-### TC-ROUTER-001: 语义匹配测试
-
-**测试目的**: 验证 AgentRouter 能正确进行语义匹配
-
-**测试代码**:
-```typescript
-import { AgentRouter } from '../src/orchestrator/AgentRouter.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-const llm = getLLMClient();
-const router = new AgentRouter(llm);
-
-const testTasks = [
-  { description: '生成一个用户登录 REST API', intent: 'code', capabilities: ['code_gen'], complexity: 5 },
-  { description: '分析销售数据并生成报告', intent: 'data', capabilities: ['data_analysis'], complexity: 6 },
-  { description: '重写这份文档使其更专业', intent: 'other', capabilities: ['document_processing'], complexity: 4 },
-  { description: '审查代码中的安全漏洞', intent: 'analysis', capabilities: ['code_review'], complexity: 7 },
-];
-
-console.log('=== 智能路由测试 ===');
-for (const task of testTasks) {
-  console.log(`\n任务: ${task.description}`);
-  const matches = await router.route(task);
-  console.log(`推荐 Agent: ${matches[0].agentType}`);
-  console.log(`置信度: ${(matches[0].confidence * 100).toFixed(0)}%`);
-  console.log(`理由: ${matches[0].reason}`);
-  console.log(`推荐技能: ${matches[0].suggestedSkills.join(', ')}`);
-}
-```
-
-**预期输出**:
-```
-=== 智能路由测试 ===
-
-任务: 生成一个用户登录 REST API
-推荐 Agent: CodeAgent
-置信度: 95%
-理由: 任务涉及代码生成，CodeAgent 专门处理此类工作
-推荐技能: code-generation, file-ops
-
-任务: 分析销售数据并生成报告
-推荐 Agent: DataAgent
-置信度: 92%
-理由: 任务涉及数据分析，DataAgent 专门处理此类工作
-推荐技能: data-analysis, file-ops
-
-任务: 重写这份文档使其更专业
-推荐 Agent: DocumentAgent
-置信度: 90%
-理由: 任务涉及文档重写，DocumentAgent 专门处理此类工作
-推荐技能: docx-processing, file-ops
+[时间] Intent 解析: xxx, xxx, X steps
+[时间] DAG 构建: X 个任务
+[时间] 开始 DAG 调度
 ...
 ```
 
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-ROUTER-002: 协作检测测试
-
-**测试目的**: 验证多 Agent 协作检测机制
-
-**测试代码**:
-```typescript
-import { AgentRouter } from '../src/orchestrator/AgentRouter.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-const llm = getLLMClient();
-const router = new AgentRouter(llm);
-
-// 需要协作的任务
-const task = {
-  description: '开发一个完整的支付系统，包括前端界面、后端 API、数据库设计和安全审查',
-  intent: 'code',
-  capabilities: ['code_gen', 'api_design', 'database', 'security'],
-  complexity: 9,
-};
-
-const matches = await router.route(task);
-const shouldCollaborate = router.shouldCollaborate(matches);
-
-console.log('=== 协作检测测试 ===');
-console.log('任务:', task.description);
-console.log('需要协作:', shouldCollaborate ? '是' : '否');
-console.log('\n所有候选 Agent:');
-matches.forEach((m, i) => {
-  console.log(`${i + 1}. ${m.agentType} - 置信度: ${(m.confidence * 100).toFixed(0)}%`);
-});
-
-if (shouldCollaborate) {
-  const plan = router.getCollaborationPlan(matches);
-  console.log('\n协作计划:');
-  console.log('主导 Agent:', plan.primary.agentType);
-  console.log('支持 Agent:', plan.supporters.map(s => s.agentType).join(', '));
-  console.log('策略:', plan.strategy);
-}
-```
-
-**预期输出**:
-```
-=== 协作检测测试 ===
-任务: 开发一个完整的支付系统...
-需要协作: 是
-
-所有候选 Agent:
-1. CodeAgent - 置信度: 85%
-2. AnalysisAgent - 置信度: 78%
-3. DataAgent - 置信度: 65%
-
-协作计划:
-主导 Agent: CodeAgent
-支持 Agent: AnalysisAgent
-策略: CodeAgent 主导开发，AnalysisAgent 提供安全审查支持
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-ROUTER-003: AgentRegistry 测试
-
-**测试目的**: 验证 AgentRegistry 的注册和查询功能
-
-**测试代码**:
-```typescript
-import { getAgentRegistry } from '../src/orchestrator/AgentRegistry.js';
-
-const registry = getAgentRegistry();
-await registry.initialize();
-
-console.log('=== AgentRegistry 测试 ===');
-
-// 列出所有注册的 Agent
-const types = registry.getRegisteredTypes();
-console.log('\n已注册 Agent:', types);
-
-// 获取能力描述
-for (const type of types) {
-  const capability = registry.getCapability(type);
-  console.log(`\n${type}:`);
-  console.log(`  描述: ${capability.description}`);
-  console.log(`  擅长: ${capability.strengths?.join(', ')}`);
-  console.log(`  理想任务: ${capability.idealTasks?.join(', ')}`);
-}
-
-// 按 Skill 查找 Agent
-const codeAgents = registry.findAgentsBySkill('code-generation');
-console.log('\n支持 code-generation 的 Agent:', codeAgents);
-
-// 按任务查找 Agent
-const agentsForApi = registry.findAgentsForTask('create REST API');
-console.log('\n适合 "create REST API" 的 Agent:');
-agentsForApi.forEach(a => {
-  console.log(`  ${a.agentType}: 匹配度 ${a.matchScore}`);
-});
-
-// 统计信息
-const stats = registry.getStats();
-console.log('\n=== 统计信息 ===');
-console.log('总 Agent 数:', stats.totalAgents);
-console.log('内置 Agent:', stats.builtinAgents);
-console.log('自定义 Agent:', stats.customAgents);
-console.log('总 Skill 数:', stats.totalSkills);
-```
-
-**预期输出**:
-```
-=== AgentRegistry 测试 ===
-
-已注册 Agent: [CodeAgent, DataAgent, AnalysisAgent, AutomationAgent, GenericAgent, DocumentAgent]
-
-CodeAgent:
-  描述: 专业的软件开发 Agent...
-  擅长: 代码生成, 代码重构, API 设计...
-  理想任务: generate code, create API...
-
-支持 code-generation 的 Agent: [CodeAgent]
-
-适合 "create REST API" 的 Agent:
-  CodeAgent: 匹配度 4
-  GenericAgent: 匹配度 0
-
-=== 统计信息 ===
-总 Agent 数: 6
-内置 Agent: 5
-自定义 Agent: 1
-总 Skill 数: 8
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-ROUTER-004: 降级策略测试
-
-**测试目的**: 验证 LLM 失败时的关键词匹配降级
-
-**测试代码**:
-```typescript
-import { AgentRouter } from '../src/orchestrator/AgentRouter.js';
-
-// 使用无效的 LLM 客户端测试降级
-const mockLLM = {
-  complete: async () => {
-    throw new Error('LLM unavailable');
-  },
-};
-
-const router = new AgentRouter(mockLLM);
-
-const task = {
-  description: '生成一个用户认证 API',
-  intent: 'code',
-  capabilities: ['code_gen'],
-  complexity: 5,
-};
-
-console.log('=== 降级策略测试 ===');
-console.log('LLM 不可用，应使用关键词匹配');
-
-const matches = await router.route(task);
-console.log('\n降级匹配结果:');
-matches.forEach(m => {
-  console.log(`${m.agentType}: ${(m.confidence * 100).toFixed(0)}%`);
-});
-
-// 验证 CodeAgent 应该被匹配（因为包含 "code" 和 "API" 关键词）
-const topMatch = matches[0];
-console.log('\n最佳匹配:', topMatch.agentType);
-console.log('预期: CodeAgent (关键词匹配)');
-```
-
-**预期输出**:
-```
-=== 降级策略测试 ===
-LLM 不可用，应使用关键词匹配
-
-降级匹配结果:
-CodeAgent: 60%
-GenericAgent: 30%
-
-最佳匹配: CodeAgent
-预期: CodeAgent (关键词匹配)
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-4: Blackboard 测试
-
-### TC-BB-001: 共享状态测试
-
-**测试目的**: 验证 Blackboard 的共享状态管理
-
-**测试代码**:
-```typescript
-import { getBlackboard } from '../src/state/Blackboard.js';
-
-const blackboard = getBlackboard();
-await blackboard.initialize();
-
-console.log('=== Blackboard 测试 ===');
-
-// 创建会话
-const sessionId = 'test-session-001';
-await blackboard.createSession(sessionId, {
-  intent: { type: 'code', primaryGoal: '测试任务', capabilities: [], complexity: 'simple', estimatedSteps: 1, constraints: [] },
-  dag: null,
-});
-
-// 设置状态
-await blackboard.setState(sessionId, 'testKey', { value: 'testValue' });
-const state = await blackboard.getState(sessionId, 'testKey');
-console.log('设置状态:', state);
-
-// 更新任务状态
-await blackboard.updateTaskStatus(sessionId, 'task-001', 'completed');
-const taskStatus = await blackboard.getTaskStatus(sessionId, 'task-001');
-console.log('任务状态:', taskStatus);
-```
-
-**预期输出**:
-```
-=== Blackboard 测试 ===
-设置状态: { value: 'testValue' }
-任务状态: completed
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-BB-002: EventBus 测试
-
-**测试目的**: 验证事件发布订阅机制
-
-**测试代码**:
-```typescript
-import { getEventBus, EventType } from '../src/state/EventBus.js';
-
-const eventBus = getEventBus();
-await eventBus.initialize();
-
-console.log('=== EventBus 测试 ===');
-
-// 订阅事件
-let receivedEvent = null;
-eventBus.subscribe(EventType.SESSION_CREATED, (event) => {
-  console.log('收到事件:', event);
-  receivedEvent = event;
-});
-
-// 发布事件
-await eventBus.publish(EventType.SESSION_CREATED, {
-  sessionId: 'test-001',
-  timestamp: new Date(),
-});
-
-// 等待事件处理
-await new Promise(resolve => setTimeout(resolve, 100));
-
-console.log('事件接收:', receivedEvent ? '成功' : '失败');
-```
-
-**预期输出**:
-```
-=== EventBus 测试 ===
-收到事件: { sessionId: 'test-001', timestamp: ... }
-事件接收: 成功
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-5: Intent Parser 测试
-
-### TC-INTENT-001: 意图解析测试
-
-**测试目的**: 验证 IntentParser 能正确解析用户意图
-
-**测试代码**:
-```typescript
-import { IntentParser } from '../src/orchestrator/IntentParser.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-const parser = new IntentParser(getLLMClient());
-
-const testInputs = [
-  '帮我生成一个用户登录 API',
-  '分析这个 CSV 文件中的销售数据',
-  '自动部署应用到生产环境',
-  '审查这段代码的性能问题',
-];
-
-console.log('=== Intent Parser 测试 ===');
-for (const input of testInputs) {
-  console.log(`\n输入: ${input}`);
-  const intent = await parser.parse(input);
-  console.log('意图类型:', intent.type);
-  console.log('主要目标:', intent.primaryGoal);
-  console.log('所需能力:', intent.capabilities.join(', '));
-  console.log('复杂度:', intent.complexity);
-  console.log('预估步骤:', intent.estimatedSteps);
-}
-```
-
-**预期输出**:
-```
-=== Intent Parser 测试 ===
-
-输入: 帮我生成一个用户登录 API
-意图类型: code
-主要目标: 生成用户登录 API
-所需能力: code_gen, api_design
-复杂度: medium
-预估步骤: 5
-
-输入: 分析这个 CSV 文件中的销售数据
-意图类型: data
-主要目标: 分析 CSV 销售数据
-所需能力: data_analysis, file_ops
-复杂度: medium
-预估步骤: 4
-...
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-INTENT-002: 复杂度评估测试
-
-**测试目的**: 验证复杂度评估的准确性
-
-**测试提示词**:
-```
-简单任务: 输出 Hello World
-中等任务: 创建一个 To-Do List API
-复杂任务: 开发一个完整的电商系统，包括用户认证、商品管理、订单处理、支付集成、库存管理、推荐系统和数据分析平台
-```
-
-**预期输出**:
-```
-简单任务 → simple
-中等任务 → medium
-复杂任务 → complex
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-INTENT-003: 约束提取测试
-
-**测试目的**: 验证能否正确提取任务约束
-
-**测试提示词**:
-```
-生成一个用户认证 API，要求：
-1. 使用 JWT Token
-2. 支持刷新 Token
-3. 密码需要加密存储
-4. 需要单元测试
-5. 遵循 REST 规范
-```
-
-**预期输出**:
-```
-constraints: [
-  '使用 JWT Token',
-  '支持刷新 Token',
-  '密码需要加密存储',
-  '需要单元测试',
-  '遵循 REST 规范'
-]
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-6: DAG Builder 测试
-
-### TC-DAG-001: DAG 构建测试
-
-**测试目的**: 验证 DAGBuilder 能正确构建任务依赖图
-
-**测试代码**:
-```typescript
-import { DAGBuilder } from '../src/orchestrator/DAGBuilder.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-const builder = new DAGBuilder(getLLMClient());
-
-const intent = {
-  type: 'code',
-  primaryGoal: '创建一个用户认证系统，包括数据库设计和 API 开发',
-  capabilities: ['code_gen', 'database', 'api_design'],
-  complexity: 'medium',
-  estimatedSteps: 5,
-  constraints: [],
-};
-
-console.log('=== DAG Builder 测试 ===');
-const dag = await builder.build(intent);
-
-console.log('任务数量:', dag.getAllTasks().length);
-console.log('\n任务列表:');
-dag.getAllTasks().forEach(task => {
-  console.log(`- ${task.name} (${task.agentType})`);
-  console.log(`  依赖: ${task.dependencies.join(', ') || '无'}`);
-  console.log(`  技能: ${task.requiredSkills.join(', ') || '无'}`);
-});
-
-// 检查循环依赖
-console.log('\n循环依赖:', dag.hasCycle() ? '有' : '无');
-
-// 拓扑排序
-console.log('\n执行顺序:');
-const sorted = dag.topologicalSort();
-sorted.forEach((task, i) => console.log(`${i + 1}. ${task.name}`));
-```
-
-**预期输出**:
-```
-=== DAG Builder 测试 ===
-任务数量: 3
-
-任务列表:
-- 设计数据库模式 (DataAgent)
-  依赖: 无
-  技能: data-analysis
-- 创建 API 端点 (CodeAgent)
-  依赖: 设计数据库模式
-  技能: code-generation
-- 编写测试 (AnalysisAgent)
-  依赖: 创建 API 端点
-  技能: code-review
-
-循环依赖: 无
-
-执行顺序:
-1. 设计数据库模式
-2. 创建 API 端点
-3. 编写测试
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-DAG-002: 并行任务检测测试
-
-**测试目的**: 验证 DAG 能识别可并行执行的任务
-
-**测试代码**:
-```typescript
-import { DAGBuilder } from '../src/orchestrator/DAGBuilder.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-const builder = new DAGBuilder(getLLMClient());
-
-const intent = {
-  type: 'code',
-  primaryGoal: '创建一个完整的博客系统，包括文章管理、用户系统、评论功能和搜索功能',
-  capabilities: ['code_gen', 'database', 'api_design'],
-  complexity: 'complex',
-  estimatedSteps: 8,
-  constraints: [],
-};
-
-const dag = await builder.build(intent);
-const tasks = dag.getAllTasks();
-
-console.log('=== 并行任务检测 ===');
-console.log('总任务数:', tasks.length);
-
-// 分析并行组
-const parallelGroups = [];
-const processed = new Set();
-
-for (const task of tasks) {
-  if (processed.has(task.id)) continue;
-
-  const ready = tasks.filter(t =>
-    !processed.has(t.id) &&
-    t.dependencies.every(dep => processed.has(dep))
-  );
-
-  if (ready.length > 0) {
-    parallelGroups.push(ready.map(t => t.name));
-    ready.forEach(t => processed.add(t.id));
-  }
-}
-
-console.log('\n并行执行组:');
-parallelGroups.forEach((group, i) => {
-  console.log(`组 ${i + 1}: ${group.join(', ')}`);
-});
-```
-
-**预期输出**:
-```
-=== 并行任务检测 ===
-总任务数: 6
-
-并行执行组:
-组 1: 设计数据库模式
-组 2: 创建文章管理 API, 创建用户系统 API
-组 3: 创建评论功能 API, 创建搜索功能
-组 4: 编写集成测试
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-DAG-003: DAGBuilderV2 智能路由集成测试
-
-**测试目的**: 验证 DAGBuilderV2 使用智能路由器
-
-**测试代码**:
-```typescript
-import { DAGBuilderV2 } from '../src/orchestrator/DAGBuilderV2.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-
-const builder = new DAGBuilderV2(getLLMClient());
-
-const intent = {
-  type: 'other',
-  primaryGoal: '重写 C:\\Users\\Documents\\draft.docx 使其更专业',
-  capabilities: ['document_processing', 'text_analysis'],
-  complexity: 'simple',
-  estimatedSteps: 2,
-  constraints: [],
-};
-
-console.log('=== DAGBuilderV2 智能路由测试 ===');
-const dag = await builder.build(intent);
-
-const tasks = dag.getAllTasks();
-console.log('任务数量:', tasks.length);
-
-tasks.forEach(task => {
-  console.log(`\n${task.name}:`);
-  console.log(`  Agent: ${task.agentType}`);
-  console.log(`  Skills: ${task.requiredSkills.join(', ')}`);
-});
-
-// 验证是否使用了 DocumentAgent 和 docx-processing skill
-const firstTask = tasks[0];
-console.log('\n验证结果:');
-console.log(`使用 DocumentAgent: ${firstTask.agentType === 'DocumentAgent' ? '✅' : '❌'}`);
-console.log(`包含 docx-processing: ${firstTask.requiredSkills.includes('docx-processing') ? '✅' : '❌'}`);
-```
-
-**预期输出**:
-```
-=== DAGBuilderV2 智能路由测试 ===
-任务数量: 1
-
-重写文档:
-  Agent: DocumentAgent
-  Skills: docx-processing, file-ops
-
-验证结果:
-使用 DocumentAgent: ✅
-包含 docx-processing: ✅
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-7: Scheduler 测试
-
-### TC-SCHED-001: 并行调度测试
-
-**测试目的**: 验证 Scheduler 能正确并行执行任务
-
-**测试代码**:
-```typescript
-import { Scheduler } from '../src/orchestrator/Scheduler.js';
-import { DAGBuilder } from '../src/orchestrator/DAGBuilder.js';
-import { getLLMClient } from '../src/llm/LLMClient.js';
-import { AgentFactory } from '../src/agents/AgentFactory.js';
-
-const builder = new DAGBuilder(getLLMClient());
-const scheduler = new Scheduler(3); // 最大并行 3
-const factory = new AgentFactory(getLLMClient());
-
-// 创建有并行任务的 DAG
-const intent = {
-  type: 'code',
-  primaryGoal: '创建用户系统和文章系统的 API',
-  capabilities: ['code_gen', 'api_design'],
-  complexity: 'medium',
-  estimatedSteps: 4,
-  constraints: [],
-};
-
-const dag = await builder.build(intent);
-
-console.log('=== Scheduler 并行调度测试 ===');
-console.log('开始时间:', new Date().toISOString());
-
-const result = await scheduler.schedule('test-session', dag, {
-  agentFactory: factory,
-});
-
-console.log('结束时间:', new Date().toISOString());
-console.log('执行结果:', result.success ? '成功' : '失败');
-console.log('总耗时:', result.executionTime, 'ms');
-```
-
-**预期输出**:
-```
-=== Scheduler 并行调度测试 ===
-开始时间: 2024-01-01T10:00:00.000Z
-[INFO] 并行执行任务: 创建用户 API, 创建文章 API
-[INFO] 任务完成: 创建用户 API
-[INFO] 任务完成: 创建文章 API
-[INFO] 继续执行下一批任务
-结束时间: 2024-01-01T10:00:30.000Z
-执行结果: 成功
-总耗时: 30000 ms
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-SCHED-002: 任务取消测试
-
-**测试目的**: 验证任务取消功能
-
-**测试代码**:
-```typescript
-import { Scheduler } from '../src/orchestrator/Scheduler.js';
-
-const scheduler = new Scheduler(2);
-
-// 创建长时间运行的任务
-// ...
-
-// 取消任务
-const cancelled = await scheduler.cancelTask('long-running-task-id');
-console.log('任务取消:', cancelled ? '成功' : '失败');
-
-// 验证任务状态
-const status = await scheduler.getTaskStatus('long-running-task-id');
-console.log('任务状态:', status);
-```
-
-**预期输出**:
-```
-任务取消: 成功
-任务状态: cancelled
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-8: Orchestrator 测试
-
-### TC-ORCH-001: 端到端流程测试
-
-**测试目的**: 验证完整的请求处理流程
-
-**测试提示词**:
-```
-帮我创建一个用户认证的 REST API，需要支持注册、登录、密码重置功能
-```
-
-**测试代码**:
-```typescript
-import { createOrchestrator } from '../src/orchestrator/Orchestrator.js';
-
-const orchestrator = createOrchestrator({
-  maxParallelAgents: 3,
-  enableDAGOptimization: true,
-});
-
-await orchestrator.initialize();
-
-const sessionId = `test-${Date.now()}`;
-const result = await orchestrator.processRequest({
-  sessionId,
-  userInput: '帮我创建一个用户认证的 REST API，需要支持注册、登录、密码重置功能',
-});
-
-console.log('=== Orchestrator 端到端测试 ===');
-console.log('会话 ID:', sessionId);
-console.log('执行结果:', result.success ? '成功' : '失败');
-console.log('响应:', result.response?.substring(0, 200) + '...');
-```
-
-**预期输出**:
-```
-=== Orchestrator 端到端测试 ===
-会话 ID: test-1700000000000
-执行结果: 成功
-响应: 已为您创建用户认证 REST API，包含以下端点：
-1. POST /auth/register - 用户注册
-2. POST /auth/login - 用户登录
-3. POST /auth/reset-password - 密码重置
-...
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-ORCH-002: 会话管理测试
-
-**测试目的**: 验证会话的创建和状态管理
-
-**测试代码**:
-```typescript
-import { createOrchestrator } from '../src/orchestrator/Orchestrator.js';
-import { getSessionStore } from '../src/state/SessionStore.js';
-
-const orchestrator = createOrchestrator();
-await orchestrator.initialize();
-
-const sessionStore = getSessionStore();
-
-const sessionId = 'session-test-001';
-
-// 处理请求
-await orchestrator.processRequest({
-  sessionId,
-  userInput: '你好',
-});
-
-// 检查会话
-const metadata = await sessionStore.getMetadata(sessionId);
-console.log('=== 会话管理测试 ===');
-console.log('会话存在:', !!metadata);
-console.log('会话状态:', metadata?.status);
-console.log('创建时间:', metadata?.createdAt);
-
-// 获取会话历史
-const history = await sessionStore.getHistory(sessionId);
-console.log('消息数量:', history.length);
-```
-
-**预期输出**:
-```
-=== 会话管理测试 ===
-会话存在: true
-会话状态: completed
-创建时间: 2024-01-01T10:00:00.000Z
-消息数量: 2 (用户输入 + Agent 响应)
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## L2-10: API 服务测试
-
-### TC-API-001: 健康检查测试
-
-**测试目的**: 验证健康检查端点
-
-**测试命令**:
-```bash
-curl http://localhost:3000/health
-```
-
-**预期输出**:
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-01T10:00:00.000Z",
-  "version": "0.1.0"
-}
-```
-
-**测试状态**: ✅ 通过
-
-**测试时间**: 2026-03-01
-
-**实际输出**:
-```json
-{"status":"ok","timestamp":"2026-03-01T01:38:14.586Z","version":"0.1.0"}
+**任务分解**:
+| 任务ID | 任务名称 | Agent | 耗时 |
+|:---|:---|:---|:---:|
+| step_1 | 任务名称 | Agent | XXs |
+
+**验证结果**:
+- [ ] Intent解析正确
+- [ ] Agent分配合理
+- [ ] DAG构建正确
+- [ ] Skills调用成功
+- [ ] 输出质量良好
+
+**问题和建议**:
+- [问题描述]
+- [改进建议]
+
+## 结论
+
+### 测试通过率
+- 通过: XX%
+- 失败: XX%
+- 警告: XX%
+
+### 改进建议
+1. [改进建议1]
+2. [改进建议2]
+3. [改进建议3]
+
+### 下一步计划
+- [ ] 待解决问题
+- [ ] 待优化项
+- [ ] 待测试功能
 ```
 
 ---
 
-### TC-API-002: 任务提交测试
+## 常见问题排查
 
-**测试目的**: 验证任务提交 API
+### 问题1: 中文输入乱码
+**症状**: pnpm cli run 在Windows下中文输入变成乱码
+**原因**: 命令行编码问题
+**解决**: 使用 `pnpm cli chat` 交互模式
 
-**测试命令**:
-```bash
-curl -X POST http://localhost:3000/api/v1/tasks/submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userInput": "生成一个斐波那契函数",
-    "context": {}
-  }'
-```
+### 问题2: Agent未生成
+**症状**: 执行新任务后未生成新Agent配置
+**原因**: Agent自动生成功能可能未实现
+**解决**: 手动创建Agent配置或等待功能实现
 
-**预期输出**:
-```json
-{
-  "success": true,
-  "taskId": "task-1700000000000",
-  "sessionId": "session-1700000000000",
-  "status": "processing"
-}
-```
+### 问题3: Intent解析不准确
+**症状**: 任务类型识别错误
+**原因**: Intent解析规则需要优化
+**解决**: 收集错误案例，优化解析规则
 
-**测试状态**: ⏳ 待测试
+### 问题4: Skills调用失败
+**症状**: Agent无法调用需要的Skill
+**原因**: Skill未注册或权限问题
+**解决**: 检查Skill配置和注册状态
 
 ---
 
-### TC-API-003: Agent 列表测试
-
-**测试目的**: 验证 Agent 列表 API
-
-**测试命令**:
-```bash
-curl http://localhost:3000/api/v1/agents/
-```
-
-**预期输出**:
-```json
-{
-  "agents": [
-    {
-      "agentId": "code-001",
-      "agentType": "CodeAgent",
-      "status": "idle",
-      "tasksCompleted": 5
-    },
-    {
-      "agentId": "data-001",
-      "agentType": "DataAgent",
-      "status": "busy",
-      "tasksCompleted": 3
-    }
-  ],
-  "total": 2
-}
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-API-004: Skills 列表测试
-
-**测试目的**: 验证 Skills 列表 API
-
-**测试命令**:
-```bash
-curl http://localhost:3000/api/v1/skills/
-```
-
-**预期输出**:
-```json
-{
-  "skills": [
-    {
-      "skillId": "code-generation",
-      "name": "code-generation",
-      "description": "生成代码",
-      "category": "code",
-      "enabled": true
-    },
-    {
-      "skillId": "docx-processing",
-      "name": "docx-processing",
-      "description": "处理 Word 文档",
-      "category": "document",
-      "enabled": true
-    }
-  ],
-  "total": 6
-}
-```
-
-**测试状态**: ✅ 通过
-
-**测试时间**: 2026-03-01
-
-**实际输出**: 成功返回 6 个内置技能（code-generation, file-ops, terminal-exec, code-review, data-analysis, docx-processing）
-
----
-
-## 自定义 Agent 测试
-
-### TC-CUSTOM-001: DocumentAgent 测试
-
-**测试目的**: 验证自定义 DocumentAgent 能正常工作
-
-**测试提示词**:
-```
-重写 D:\\test\\document.txt 使其更加专业和易读
-```
-
-**测试代码**:
-```typescript
-import { getAgentRegistry } from '../src/orchestrator/AgentRegistry.js';
-
-const registry = getAgentRegistry();
-await registry.initialize();
-
-// 检查 DocumentAgent 是否已注册
-const isRegistered = registry.isRegistered('DocumentAgent');
-console.log('DocumentAgent 注册状态:', isRegistered ? '✅' : '❌');
-
-if (isRegistered) {
-  const DocumentAgentClass = registry.getAgentClass('DocumentAgent');
-  const agent = new DocumentAgentClass(llm, skillManager);
-
-  const result = await agent.execute({
-    description: '重写测试文档',
-    input: 'D:\\test\\document.txt',
-    output: 'D:\\test\\document_rewritten.txt',
-  });
-
-  console.log('执行结果:', result.success ? '成功' : '失败');
-  console.log('操作:', result.result?.action);
-}
-```
-
-**预期输出**:
-```
-DocumentAgent 注册状态: ✅
-执行结果: 成功
-操作: rewrite
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-CUSTOM-002: 自定义 Agent 自动加载测试
-
-**测试目的**: 验证 src/agents/custom/ 下的 Agent 能被自动加载
-
-**测试代码**:
-```typescript
-import { getAgentRegistry } from '../src/orchestrator/AgentRegistry.js';
-
-const registry = getAgentRegistry();
-await registry.initialize();
-
-const stats = registry.getStats();
-console.log('=== 自定义 Agent 自动加载测试 ===');
-console.log('总 Agent 数:', stats.totalAgents);
-console.log('内置 Agent:', stats.builtinAgents);
-console.log('自定义 Agent:', stats.customAgents);
-
-// 列出所有自定义 Agent
-const customAgents = registry.listExternalSkills?.() || [];
-console.log('\n自定义 Agent 列表:');
-customAgents.forEach(agent => {
-  console.log(`- ${agent.name} (${agent.version}) by ${agent.author || 'Unknown'}`);
-});
-```
-
-**预期输出**:
-```
-=== 自定义 Agent 自动加载测试 ===
-总 Agent 数: 6
-内置 Agent: 5
-自定义 Agent: 1
-
-自定义 Agent 列表:
-- DocumentAgent (1.0.0) by Your Name
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## 端到端集成测试
-
-### TC-E2E-001: 代码开发完整流程测试
-
-**测试提示词**:
-```
-帮我开发一个待办事项管理 API，需要：
-1. 创建待办事项
-2. 查看所有待办事项
-3. 标记待办事项为完成
-4. 删除待办事项
-使用 TypeScript 和 Express 框架
-```
-
-**测试步骤**:
-1. Intent Parser 解析意图 → 应识别为 `code` 类型
-2. DAG Builder 构建任务图 → 应生成 3-4 个任务
-3. Scheduler 调度执行 → 应使用 CodeAgent
-4. Agent 执行并返回结果
-
-**预期输出**:
-```
-[INFO] 意图解析: type=code, complexity=medium
-[INFO] DAG 构建: 4 个任务
-[INFO] 路由结果: CodeAgent (95%)
-[INFO] 执行任务 1/4: 设计数据模型
-[INFO] 执行任务 2/4: 创建 Express 路由
-[INFO] 执行任务 3/4: 实现控制器逻辑
-[INFO] 执行任务 4/4: 添加输入验证
-
-=== 执行结果 ===
-✅ 已完成待办事项管理 API 开发
-📁 生成的文件:
-   - models/Todo.ts
-   - routes/todos.ts
-   - controllers/TodoController.ts
-   - middleware/validation.ts
-🔗 端点列表:
-   - POST /api/todos
-   - GET /api/todos
-   - PATCH /api/todos/:id/complete
-   - DELETE /api/todos/:id
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-E2E-002: 文档处理完整流程测试
-
-**测试提示词**:
-```
-分析 D:\\Reports\\sales_report.docx，提取关键数据并生成摘要
-```
-
-**测试步骤**:
-1. Intent Parser 解析 → 应识别为 `data` 或 `other` 类型
-2. Agent Router 路由 → 应选择 DocumentAgent
-3. DocxProcessingSkill 执行 → 读取文档内容
-4. DataAgent 分析 → 生成摘要
-
-**预期输出**:
-```
-[INFO] 意图解析: type=other, complexity=medium
-[INFO] 路由结果: DocumentAgent (88%)
-[INFO] 使用技能: docx-processing, data-analysis
-
-=== 文档分析结果 ===
-📄 文档: sales_report.docx
-📊 内容长度: 15,234 字符
-🔑 关键数据:
-   - 总销售额: ¥1,234,567
-   - 增长率: +15.3%
-   - 最佳产品: Product A (¥456,789)
-📝 摘要:
-   本报告分析了 2024 年 Q1 的销售情况...
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-### TC-E2E-003: 多 Agent 协作测试
-
-**测试提示词**:
-```
-开发一个支付系统，包括后端 API 开发、安全审查和性能测试
-```
-
-**测试步骤**:
-1. Intent Parser 解析 → 应识别为 `code` 类型，高复杂度
-2. Agent Router 路由 → 应检测到需要协作
-3. DAG Builder 构建 → 应生成多个 Agent 的任务
-4. Scheduler 并行调度 → CodeAgent 主导，AnalysisAgent 支持
-
-**预期输出**:
-```
-[INFO] 意图解析: type=code, complexity=complex
-[INFO] 路由结果: 检测到需要多 Agent 协作
-[INFO] 主导 Agent: CodeAgent (85%)
-[INFO] 支持 Agent: AnalysisAgent (78%)
-[INFO] 协作策略: CodeAgent 主导开发，AnalysisAgent 提供安全审查
-
-=== 执行计划 ===
-并行组 1:
-  - CodeAgent: 设计支付 API
-  - AnalysisAgent: 制定安全标准
-
-并行组 2:
-  - CodeAgent: 实现支付逻辑
-  - AnalysisAgent: 审查代码安全
-
-并行组 3:
-  - CodeAgent: 性能优化
-  - AnalysisAgent: 压力测试
-
-=== 执行结果 ===
-✅ 支付系统开发完成
-🔒 安全审查通过
-⚡ 性能测试通过 (TPS: 1000+)
-```
-
-**测试状态**: ⏳ 待测试
-
----
-
-## 测试执行记录
-
-### 执行日志模板
-
-| 用例 ID | 执行时间 | 执行人 | 结果 | 备注 |
-|:---|:---|:---|:---:|:---|
-| TC-LLM-001 | | | ⏳ | |
-| TC-LLM-002 | | | ⏳ | |
-| ... | | | ⏳ | |
-
----
-
-## 测试总结
-
-### 通过率统计
-
-```
-总用例数: 35
-通过: 0 (0%)
-失败: 0 (0%)
-待测试: 35 (100%)
-```
-
-### 问题跟踪
-
-| 问题 ID | 问题描述 | 严重程度 | 状态 |
-|:---|:---|:---:|:---:|
-| - | - | - | - |
+## 测试最佳实践
+
+### 1. 测试用例设计
+- 使用真实场景作为测试用例
+- 包含多种复杂度级别
+- 覆盖所有Agent类型
+- 涉及多个Skill调用
+
+### 2. 测试执行
+- 严格按照测试流程执行
+- 详细记录每个步骤
+- 保存完整的输出日志
+- 捕获屏幕截图（如需要）
+
+### 3. 结果分析
+- 不仅关注是否通过，还要分析质量
+- 对比不同测试用例的表现
+- 识别系统性问题
+- 提出具体的改进建议
+
+### 4. 持续改进
+- 定期更新测试用例
+- 根据新功能添加测试
+- 优化测试流程
+- 分享测试经验
 
 ---
 
 ## 附录
 
-### A. 测试环境准备
+### A. 测试用例清单
+详见 `tests/cases/README.md`
 
-```bash
-# 1. 安装依赖
-pnpm install
+### B. 测试脚本清单
+详见 `tests/scripts/`
 
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，设置 LLM_API_KEY
+### C. 测试报告清单
+详见 `tests/reports/`
 
-# 3. 创建 memory 目录
-mkdir -p memory/sessions
-mkdir -p memory/feedback
-mkdir -p memory/artifacts
-
-# 4. 启动 Redis (可选)
-docker run -d -p 6379:6379 redis:7
-
-# 5. 启动 API 服务器
-pnpm dev
-```
-
-### B. 运行单个测试
-
-```bash
-# 运行 LLM 抽象层测试
-pnpm test tests/unit/llm.test.ts
-
-# 运行集成测试
-pnpm test tests/integration/
-```
-
-### C. 运行所有测试
-
-```bash
-# 运行全部测试
-pnpm test
-
-# 生成覆盖率报告
-pnpm test:coverage
-```
+### D. 相关文档
+- `task.md` - 工程总任务要求
+- `CLAUDE.md` - 项目开发规范
+- `README.md` - 项目说明文档
 
 ---
 
-## 测试执行总结
-
-### 测试命令
-
-```bash
-# 运行核心验证测试
-pnpm test tests/core-validation.test.ts --run
-```
-
-### 测试输出示例
-
-```
-✅ 内置技能数量: 6
-┌─────────┬───────────────────┬────────────┬─────────┐
-│ (index) │ name              │ category   │ enabled │
-├─────────┼───────────────────┼────────────┼─────────┤
-│ 0       │ 'code-generation' │ 'code'     │ true    │
-│ 1       │ 'file-ops'        │ 'file'     │ true    │
-│ 2       │ 'terminal-exec'   │ 'terminal' │ true    │
-│ 3       │ 'code-review'     │ 'code'     │ true    │
-│ 4       │ 'data-analysis'   │ 'data'     │ true    │
-│ 5       │ 'docx-processing' │ 'document' │ true    │
-└─────────┴───────────────────┴────────────┴─────────┘
-
-✅ 已注册 Agent: [CodeAgent, DataAgent, AutomationAgent, AnalysisAgent, GenericAgent, DocumentAgent]
-
-=== AgentRegistry 统计 ===
-总 Agent: 6
-内置 Agent: 5
-自定义 Agent: 1
-总 Skill 数: 8
-
-✅ CodeAgent 创建成功
-✅ DataAgent 创建成功
-✅ AnalysisAgent 创建成功
-✅ AutomationAgent 创建成功
-✅ GenericAgent 创建成功
-```
-
-### 测试提示词记录
-
-以下是测试中使用的关键提示词，可用于复现测试：
-
-#### TC-INTENT-001: 意图解析提示词
-
-```
-帮我生成一个用户登录 API
-```
-
-**预期行为**: 系统应识别为 `code` 类型，分配给 CodeAgent
-
----
-
-#### TC-DAG-001: DAG 构建提示词
-
-```
-创建一个用户认证系统，包括数据库设计和 API 开发
-```
-
-**预期行为**: 构建包含 2-3 个任务的 DAG，识别依赖关系
-
----
-
-#### TC-E2E-001: 代码开发完整流程提示词
-
-```
-帮我开发一个待办事项管理 API，需要：
-1. 创建待办事项
-2. 查看所有待办事项
-3. 标记待办事项为完成
-4. 删除待办事项
-使用 TypeScript 和 Express 框架
-```
-
-**预期行为**:
-- Intent Parser → `code` 类型，`medium` 复杂度
-- Agent Router → CodeAgent (95% 置信度)
-- DAG Builder → 生成 4 个任务
-- Scheduler → 并行执行
-
----
-
-#### TC-E2E-002: 文档处理提示词
-
-```
-重写 D:\\Documents\\report.docx 使其更专业
-```
-
-**预期行为**:
-- Intent Parser → `other` 类型
-- Agent Router → DocumentAgent (90%+ 置信度)
-- Skills → docx-processing, file-ops
-
----
-
-#### TC-E2E-003: 多 Agent 协作提示词
-
-```
-开发一个支付系统，包括后端 API 开发、安全审查和性能测试
-```
-
-**预期行为**:
-- 检测到需要协作
-- CodeAgent 主导，AnalysisAgent 支持
-- 生成 6+ 个任务
-
----
-
-### 测试覆盖的 task.md 要求对照
-
-| task.md 章节 | 要求 | 状态 | 测试用例 |
-|:---|:---|:---:|:---|
-| **L2-1** | LLM 抽象层 | ✅ | TC-LLM-001 ~ TC-LLM-003 |
-| **L2-2** | Skills 系统 | ✅ | TC-SKILL-001 ~ TC-SKILL-004 |
-| **L2-3** | Agent Factory | ✅ | TC-AGENT-001 ~ TC-AGENT-003 |
-| **L2-3.5** | 智能路由系统 | ✅ | TC-ROUTER-001 ~ TC-ROUTER-004 |
-| **L2-4** | Blackboard | ✅ | TC-BB-001 ~ TC-BB-002 |
-| **L2-5** | Intent Parser | ✅ | TC-INTENT-001 ~ TC-INTENT-003 |
-| **L2-6** | DAG Builder | ✅ | TC-DAG-001 ~ TC-DAG-003 |
-| **L2-7** | Scheduler | ✅ | TC-SCHED-001 ~ TC-SCHED-002 |
-| **L2-8** | Orchestrator | ✅ | TC-ORCH-001 ~ TC-ORCH-002 |
-| **L2-10** | API 服务 | ✅ | TC-API-001 ~ TC-API-004 |
-| **自定义 Agent** | DocumentAgent | ✅ | TC-CUSTOM-001 ~ TC-CUSTOM-002 |
-| **端到端** | 集成测试 | 🔄 | TC-E2E-001 ~ TC-E2E-003 |
-
----
-
-### 已验证的核心功能
-
-1. **智能 Agent 选择** ✅
-   - LLM 语义匹配替代关键词
-   - 置信度评分机制
-   - 降级策略（关键词 fallback）
-
-2. **动态 Agent 加载** ✅
-   - 自动扫描 `src/agents/custom/`
-   - `agent.config.json` 配置驱动
-   - DocumentAgent 示例工作正常
-
-3. **Skills 集成** ✅
-   - 6 个内置技能 + 2 个外部技能
-   - DocxProcessingSkill 支持 Word 文档处理
-
-4. **完整工作流** ✅
-   - Intent Parser → DAG Builder → Scheduler → Agent Execution
-
----
-
-### 后续测试建议
-
-1. **端到端集成测试**
-   - 启动 API 服务器
-   - 通过 HTTP 请求测试完整流程
-
-2. **实际任务测试**
-   - 使用真实的 LLM API（而非 mock）
-   - 测试文档重写功能
-
-3. **性能测试**
-   - 并发任务处理能力
-   - 大型 DAG 构建性能
-
----
-
-### 快速验证命令
-
-```bash
-# 1. 验证核心组件加载
-pnpm test tests/core-validation.test.ts --run
-
-# 2. 启动 API 服务器
-pnpm start
-
-# 3. 测试健康检查
-curl http://localhost:3000/health
-
-# 4. 提交测试任务
-curl -X POST http://localhost:3000/api/v1/tasks/submit \
-  -H "Content-Type: application/json" \
-  -d '{"userInput": "生成一个斐波那契函数"}'
-```
-
----
-
-## 最新复杂测试结果 (2026-03-03)
-
-### TC-COMPLEX-001: 多Agent协作 - 完整任务管理API开发
-
-#### 测试目标
-验证多Agent协作场景，包括DataAgent、CodeAgent和AutomationAgent的协同工作。
-
-#### 测试时间
-- **开始时间**: 15:12:31
-- **结束时间**: 15:15:13
-- **总耗时**: 155,817ms (约2分36秒)
-- **DAG执行耗时**: 129,756ms (约2分10秒)
-
-#### 测试用例
-```
-Develop a complete REST API for task management with the following requirements:
-1) Design database models for tasks and users
-2) Create API endpoints for CRUD operations
-3) Add input validation and error handling
-4) Write unit tests for the API
-5) Perform code review to check for security vulnerabilities.
-Use TypeScript and Express framework with PostgreSQL database.
-```
-
-#### 执行结果
-
-**Intent解析结果**:
-- intentType: `code`
-- complexity: `complex`
-- estimatedSteps: 8
-
-**DAG任务分配**:
-
-| 任务ID | 任务名称 | Agent类型 | 耗时(ms) | 状态 |
-|:---|:---|:---|:---:|:---:|
-| step_1 | 数据库设计 | DataAgent | 21,292 | ✅ |
-| step_2 | API端点创建 | CodeAgent | 28,524 | ✅ |
-| step_3 | 输入验证 | CodeAgent | 12,144 | ✅ |
-| step_4 | 错误处理 | CodeAgent | 9,601 | ✅ |
-| step_5 | 单元测试 | AutomationAgent | 28,428 | ✅ |
-| step_6 | 代码审查 | CodeAgent | 14,676 | ✅ |
-| step_7 | TypeScript实现 | CodeAgent | 15,091 | ✅ |
-
-**多Agent协作验证**:
-- ✅ DataAgent 数据库设计
-- ✅ CodeAgent API开发和代码审查
-- ✅ AutomationAgent 单元测试自动化
-- ✅ 任务依赖关系正确执行
-- ✅ DAG并行调度正常工作
-
-**输出质量**:
-- 生成了完整的数据库设计文档
-- 创建了TypeScript REST API代码
-- 提供了输入验证和错误处理函数
-- 生成了自动化测试工作流计划
-- 提供了代码审查意见和改进建议
-
-#### 性能分析
-
-**各阶段耗时**:
-1. LLM初始化: < 1秒
-2. Intent解析: 5秒
-3. DAG构建: 21秒
-4. DAG执行: 129秒
-5. 总执行: 155秒
-
-**Agent性能**:
-- DataAgent平均响应: 21秒
-- CodeAgent平均响应: 16秒
-- AutomationAgent平均响应: 28秒
-
-**并发执行**: 串行执行（DAG依赖关系）
-
----
-
-### TC-COMPLEX-002: 并行任务处理测试
-
-#### 测试目标
-验证DAG并行调度能力，测试无依赖任务的并行执行。
-
-#### 测试时间
-- **开始时间**: 15:16:13
-- **结束时间**: 15:19:22
-- **总耗时**: 182,694ms (约3分3秒)
-- **DAG执行耗时**: 238,245ms (约3分58秒)
-
-#### 测试用例
-```
-Create an e-commerce backend system with the following independent modules:
-1) User authentication service
-2) Product catalog service
-3) Order processing service
-4) Payment gateway integration
-5) Inventory management system
-6) Review and rating system
-Use microservices architecture with TypeScript.
-```
-
-#### 预期结果
-- 检测到6个独立任务
-- 并行执行无依赖任务
-- 验证并行性能提升
-
-#### 执行结果
-
-**Intent解析结果**:
-- intentType: `deployment`
-- complexity: `complex`
-- estimatedSteps: 10
-
-**DAG任务分配**:
-
-| 任务ID | 任务名称 | Agent类型 | 耗时(ms) | 状态 |
-|:---|:---|:---|:---:|:---:|
-| step_1 | 需求分析 | AnalysisAgent | 30,006 | ✅ |
-| step_2 | 架构设计 | CodeAgent | 28,051 | ✅ |
-| step_3 | 用户认证模块开发 | CodeAgent | 20,332 | ✅ |
-| step_4 | 产品目录模块开发 | CodeAgent | 18,032 | ✅ |
-| step_5 | 订单处理模块开发 | CodeAgent | 22,431 | ✅ |
-| step_6 | 支付网关集成 | CodeAgent | 26,315 | ✅ |
-| step_7 | 库存管理模块开发 | CodeAgent | 20,435 | ✅ |
-| step_8 | 评价系统模块开发 | CodeAgent | 17,158 | ✅ |
-| step_9 | 系统测试 | AutomationAgent | 24,030 | ✅ |
-| step_10 | 系统部署 | AutomationAgent | 31,455 | ✅ |
-
-**并行执行验证**:
-
-Round 3 (并行执行):
-- readyTaskCount: **6**
-- 同时启动6个独立模块
-- 总耗时: ~26秒 (最慢的任务)
-
-| 并行任务 | 完成时间 |
-|:---|:---:|
-| step_8 评价系统 | 17.1秒 |
-| step_4 产品目录 | 18.0秒 |
-| step_3 用户认证 | 20.3秒 |
-| step_7 库存管理 | 20.4秒 |
-| step_5 订单处理 | 22.4秒 |
-| step_6 支付网关 | 26.3秒 |
-
-**性能分析**:
-
-如果串行执行6个模块，预计耗时: ~125秒
-实际并行执行耗时: ~26秒
-**性能提升**: 约 **79%** 的性能提升
-
-**多Agent协作验证**:
-- ✅ AnalysisAgent 需求分析
-- ✅ CodeAgent 架构设计和模块开发（6个并行）
-- ✅ AutomationAgent 系统测试和部署
-- ✅ DAG正确识别独立任务并并行执行
-- ✅ 并行调度显著提升执行效率
-
----
-
-### TC-COMPLEX-003: 技能调用链测试
-
-#### 测试目标
-验证多技能协作场景，测试Agent如何调用不同技能完成任务链。
-
-#### 测试时间
-- **开始时间**: 15:20:01
-- **结束时间**: 15:21:47
-- **总耗时**: 99,477ms (约1分39秒)
-- **DAG执行耗时**: 78,746ms (约1分19秒)
-
-#### 测试用例
-```
-Analyze the source code in the src directory, create a documentation file explaining the architecture,
-generate unit tests for the core modules, and perform a security review to identify potential vulnerabilities.
-Use the file-ops skill to read files, data-analysis skill to analyze code structure,
-code-generation skill to create tests, and code-review skill for security analysis.
-```
-
-#### 执行结果
-
-**Intent解析结果**:
-- intentType: `analysis`
-- complexity: `medium`
-- estimatedSteps: 4
-
-**DAG任务分配**:
-
-| 任务ID | 任务名称 | Agent类型 | 耗时(ms) | 状态 |
-|:---|:---|:---|:---:|:---:|
-| step_1 | 读取源代码 | GenericAgent | 10,820 | ✅ |
-| step_2 | 代码解析 | CodeAgent | 16,111 | ✅ |
-| step_3 | 数据收集 | DataAgent | 13,958 | ✅ |
-| step_4 | 代码生成 | AutomationAgent | 28,776 | ✅ |
-| step_5 | 代码审查 | CodeAgent | 9,081 | ✅ |
-
-**技能调用链验证**:
-
-虽然技能执行有警告（技能注册问题），但系统正确完成了任务链：
-
-1. **文件操作** (GenericAgent)
-   - 生成了源代码读取方案
-   - 提供了详细的执行步骤
-
-2. **代码解析** (CodeAgent)
-   - 创建了TypeScript AST解析器
-   - 使用`ts`包进行语法分析
-
-3. **数据分析** (DataAgent)
-   - 分析了代码解析结果
-   - 提供了关键发现和详细分析
-
-4. **自动化工作流** (AutomationAgent)
-   - 设计了完整的自动化流程
-   - 包含数据收集、处理、分析和生成
-
-5. **代码审查** (CodeAgent)
-   - 执行了代码审查
-   - 提供了改进建议
-
-**多Agent协作验证**:
-- ✅ GenericAgent 文件操作
-- ✅ CodeAgent 代码解析和审查
-- ✅ DataAgent 数据分析
-- ✅ AutomationAgent 自动化设计
-- ✅ 任务依赖关系正确执行
-- ✅ 跨Agent数据传递正常
-
----
-
-### TC-COMPLEX-004: 错误恢复测试
-
-#### 测试目标
-验证Agent执行失败时的错误处理和恢复机制。
-
-#### 测试时间
-- 执行时间: 待测试
-
-#### 测试用例
-```
-Create a complete machine learning pipeline with the following steps:
-1) Data collection from invalid source URL (should fail)
-2) Data preprocessing and cleaning
-3) Model training
-4) Model evaluation
-5) Deployment preparation
-```
-
-#### 预期结果
-- 检测到步骤1失败
-- 跳过或重试失败步骤
-- 继续执行后续可执行任务
-
----
-
-### 测试环境配置
-
-**API配置**:
-- Provider: Zhipu AI
-- Model: glm-4-flash
-- Base URL: https://open.bigmodel.cn/api/paas/v4/
-
-**系统配置**:
-- Max Parallel Agents: 10
-- Task Timeout: 300000ms (5分钟)
-- Redis: localhost:6379 (回退到内存模式)
-
----
-
-### 下一步测试计划
-
-1. **高并发测试**: 同时提交10个复杂任务
-2. **长时间运行测试**: 运行30分钟持续任务
-3. **内存泄漏测试**: 监控长时间运行的内存使用
-4. **错误注入测试**: 模拟各种失败场景
-
----
-
-## 对话交互测试 (2026-03-03 新增)
-
-### TC-CONV-001: 简单问候测试
-
-#### 测试目标
-验证系统能正确识别简单问候语并返回友好回应，而不是触发复杂的任务分析流程。
-
-#### 测试时间
-- **执行时间**: 16:00:47 - 16:00:49
-- **总耗时**: 2.04秒
-
-#### 测试用例
-```
-hello
-```
-
-#### 执行结果
-
-**Intent解析结果**:
-- intentType: `conversation`
-- conversationType: `greeting`
-- complexity: `simple`
-- estimatedSteps: 0
-
-**响应**:
-```
-你好！我是您的个人AI助手，随时准备协助您完成工作。我可以处理代码、数据、文档等各种任务。请随时告诉我您的需求。
-```
-
-**关键发现**:
-- ✅ 正确识别为对话类型（而非任务类型）
-- ✅ 跳过DAG构建和执行流程
-- ✅ 直接返回友好问候
-- ✅ 执行时间大幅缩短（2秒 vs 之前的126秒）
-
----
-
-### TC-CONV-002: 帮助请求测试
-
-#### 测试目标
-验证系统能正确处理帮助请求，展示系统能力。
-
-#### 测试时间
-- **执行时间**: 16:01:33 - 16:01:36
-- **总耗时**: 3.16秒
-
-#### 测试用例
-```
-help
-```
-
-#### 执行结果
-
-**Intent解析结果**:
-- intentType: `conversation`
-- conversationType: `help`
-- complexity: `simple`
-- estimatedSteps: 0
-
-**响应**:
-```
-我是您的个人AI助手，可以帮您完成以下工作：
-
-📝 代码开发
-- 编写各类编程语言代码
-- 代码审查和优化建议
-- 调试和问题排查
-
-📊 数据处理
-- 数据分析和可视化
-- 数据清洗和转换
-- 统计分析
-
-📄 文档处理
-- 文档编写和编辑
-- 内容分析和总结
-- 格式转换
-
-🤖 自动化任务
-- 工作流自动化
-- 批量操作
-- 定时任务调度
-
-请告诉我您想做什么，我会智能匹配最合适的Agent来帮您完成！
-```
-
-**关键发现**:
-- ✅ 正确识别为帮助请求
-- ✅ 列出完整系统能力
-- ✅ 跳过复杂任务流程
-- ✅ 友好的格式化输出
-
----
-
-### 对话交互测试总结
-
-| 测试ID | 测试内容 | 意图类型 | 耗时 | 状态 |
-|:---|:---|:---:|:---:|:---:|
-| TC-CONV-001 | 简单问候 (hello) | conversation/greeting | 2.04s | ✅ |
-| TC-CONV-002 | 帮助请求 (help) | conversation/help | 3.16s | ✅ |
-
-**改进效果对比**:
-
-| 项目 | 改进前 | 改进后 |
-|:---|:---:|:---:|
-| 简单问候响应 | 126秒 (5个任务) | 2秒 (直接回应) |
-| 意图识别 | other类型 | conversation类型 |
-| DAG构建 | 创建5个任务 | 跳过DAG |
-| 用户体验 | 复杂分析报告 | 友好直接回应 |
-
-**支持的对话类型**:
-- 问候语: hello, hi, 你好, 嗨
-- 感谢语: thanks, 谢谢, 感谢
-- 道别语: bye, 再见, 拜拜
-- 帮助请求: help, 帮助, 你能做什么
-- 闲聊: 非任务性的日常对话
-
----
-
-## 文件操作测试 (2026-03-08 新增)
-
-### TC-FILE-001: 文件读取和修改功能测试
-
-#### 测试目标
-验证 FileOpsSkill 能否正确读取和修改本地文件。
-
-#### 测试时间
-- **执行时间**: 16:37:06
-- **总耗时**: < 1秒
-
-#### 测试内容
-
-| 测试项 | 操作 | 预期结果 | 实际结果 |
-|:---|:---|:---:|:---:|
-| 写入文件 | operation: write | ✅ | ✅ |
-| 读取文件 | operation: read | ✅ | ✅ |
-| 修改文件 | operation: modify (TEST -> MODIFIED) | ✅ | ✅ |
-| 验证修改 | 检查内容是否包含 MODIFIED | ✅ | ✅ |
-
-#### 测试代码
-```javascript
-// 1. 写入测试文件
-const writeResult = await skillManager.executeSkill('file-ops', {
-  operation: 'write',
-  path: 'test-simple-ops.txt',
-  content: 'Original content with TEST word'
-});
-
-// 2. 读取文件
-const readResult = await skillManager.executeSkill('file-ops', {
-  operation: 'read',
-  path: 'test-simple-ops.txt'
-});
-
-// 3. 修改文件 (TEST -> MODIFIED)
-const modifyResult = await skillManager.executeSkill('file-ops', {
-  operation: 'modify',
-  path: 'test-simple-ops.txt',
-  search: 'TEST',
-  replace: 'MODIFIED'
-});
-
-// 4. 验证修改
-const verifyResult = await skillManager.executeSkill('file-ops', {
-  operation: 'read',
-  path: 'test-simple-ops.txt'
-});
-```
-
-#### 执行结果
-
-```
-=== Simple File Operations Test ===
-
-1. Writing test file...
-   Write: ✅
-2. Reading file...
-   Read: ✅
-   Content: Original content with TEST word
-3. Modifying file (TEST -> MODIFIED)...
-   Modify: ✅
-4. Verifying modification...
-   Verify: ✅
-   New content: Original content with MODIFIED word
-
-=== Test Results ===
-Contains "MODIFIED": ✅
-Does not contain "TEST": ✅
-
-✅ ALL TESTS PASSED!
-```
-
-#### 关键发现
-- ✅ FileOpsSkill 的 write 操作正常工作
-- ✅ FileOpsSkill 的 read 操作正常工作
-- ✅ FileOpsSkill 的 modify 操作正常工作
-- ✅ 文件内容替换功能正确执行
-- ✅ 修复了 existsSync 导入缺失的问题
-
-#### 修复内容
-**文件**: `src/skills/builtin/FileOpsSkill.ts`
-- 第7行: 添加了 `existsSync` 的导入
-```typescript
-import { promises as fs, existsSync } from 'fs';
-```
-
----
-
-### TC-FILE-002: Chat模式文件操作测试
-
-#### 测试目标
-验证通过 Orchestrator 和 Agent 系统进行文件操作。
-
-#### 测试时间
-- **开始时间**: 16:31:37
-- **结束时间**: 进行中
-- **当前状态**: 执行中
-
-#### 测试用例
-1. **Test 1**: 读取 test-file-ops.txt 文件的内容
-2. **Test 2**: 将 test-file-ops.txt 文件中的 "Hi" 替换为 "Hello"
-3. **Test 3**: 再次读取 test-file-ops.txt 文件，确认内容已修改
-4. **Test 4**: 读取 package.json 文件，分析项目名称和版本，然后在 test-file-ops.txt 文件末尾添加一行说明
-
-#### 预期结果
-- Test 1: ✅ Success (DataAgent 读取文件)
-- Test 2: ✅ Success (AutomationAgent 执行文件替换)
-- Test 3: ✅ Success (DataAgent 验证修改)
-- Test 4: 进行中 (多 Agent 协作: DataAgent + AnalysisAgent + AutomationAgent)
-
-#### 执行过程
-
-**Test 1 - 读取文件**:
-- Intent: `data`, complexity: `simple`
-- Agent: DataAgent
-- DAG任务: 1
-- 耗时: 21秒
-- 状态: ✅ Success
-
-**Test 2 - 修改文件**:
-- Intent: `automation`, complexity: `simple`
-- DAG任务: 5
-- Agent: AutomationAgent, AnalysisAgent (多Agent协作)
-- 耗时: 173秒
-- 状态: ✅ Success
-
-**Test 3 - 验证修改**:
-- Intent: `data`, complexity: `simple`
-- DAG任务: 3
-- Agent: DataAgent, AnalysisAgent, GenericAgent
-- 耗时: 75秒
-- 状态: ✅ Success
-
-**Test 4 - 复杂任务**:
-- Intent: `automation`, complexity: `medium`
-- DAG任务: 5
-- Agent: DataAgent, AnalysisAgent
-- 状态: 进行中
-
----
-
-### 文件操作测试总结
-
-| 测试ID | 测试内容 | 状态 |
-|:---|:---|:---:|
-| TC-FILE-001 | 基础文件操作 (读写改) | ✅ |
-| TC-FILE-002 | Chat模式文件操作 | 🔄 |
-
-**测试覆盖率**:
-- ✅ 文件写入操作
-- ✅ 文件读取操作
-- ✅ 文件修改操作
-- ✅ 内容替换功能
-- ✅ 多 Agent 协作文件操作
-- ✅ DAG 调度文件任务
-
----
-
-## CLI 修复记录 (2026-03-08)
-
-### Issue: `pnpm cli chat` 模式不稳定
-
-#### 问题描述
-- `pnpm cli run` 可以正常运行
-- `pnpm cli chat` 交互模式容易出错
-- Ctrl+C 无法正常退出
-
-#### 根本原因
-
-1. **缺少信号处理**: chat 模式没有 SIGINT/SIGTERM 信号处理器
-2. **状态管理**: 没有 `isShuttingDown` 标志防止重复关闭
-3. **输入验证**: 未检查 `rl.closed` 状态，导致 readline 关闭后继续执行
-4. **结果显示**: 只检查 `result.data.response` 字段，兼容性不足
-
-#### 修复内容
-
-**文件**: `src/cli.ts`
-
-1. **添加信号处理器** (第256-274行):
-```typescript
-const shutdown = async (signal: string) => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  console.log(`\n\n收到 ${signal} 信号，正在关闭...`);
-  try {
-    rl.close();
-    await orchestrator.shutdown();
-    console.log('\x1b[1;32m✓ 已安全退出\x1b[0m\n');
-  } catch (error: any) {
-    console.error('\x1b[1;31m✗ 关闭时出错:\x1b[0m', error.message);
-  }
-  process.exit(0);
-};
-
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-```
-
-2. **改进循环控制** (第277-301行):
-```typescript
-while (!isShuttingDown) {
-  const userInput = await new Promise<string>((resolve) => {
-    rl.question('\x1b[1;36mYou>\x1b[0m ', (answer) => {
-      if (rl.closed) {
-        isShuttingDown = true;
-        resolve('');
-      } else {
-        resolve(answer);
-      }
-    });
-  });
-
-  if (isShuttingDown || rl.closed) {
-    break;
-  }
-
-  const trimmedInput = userInput?.trim() || '';
-  if (!trimmedInput) {
-    continue;
-  }
-  // ...
-}
-```
-
-3. **优化结果显示** (第431-456行):
-```typescript
-// 支持多种返回格式
-const responseText = result.data?.response || result.response || result.data?.output || result.data?.answer;
-
-if (responseText) {
-  console.log(String(responseText));
-} else if (result.data?.tasks && result.data.tasks.length > 0) {
-  // 显示任务摘要
-  console.log('\n\x1b[1;33m任务完成摘要:\x1b[0m');
-  for (const task of result.data.tasks) {
-    const status = task.success ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
-    console.log(`  ${status} ${task.name || task.id}`);
-  }
-} else {
-  console.log(JSON.stringify(result.data || result, null, 2));
-}
-```
-
-#### 修复前后对比
-
-| 项目 | 修复前 | 修复后 |
-|:---|:---|:---|
-| Ctrl+C 处理 | 直接终止进程 | 正常关闭资源 |
-| 异常退出 | 无保护 | try-catch + 状态检查 |
-| 结果显示 | 只显示 response | 多种格式兼容 |
-| 状态管理 | 无标志 | isShuttingDown 控制 |
-
-#### 测试验证
-
-```bash
-# 测试正常退出
-pnpm cli chat
-# 输入: hello
-# 按 Ctrl+C
-# 预期: 显示 "收到 SIGINT 信号，正在关闭..." 后正常退出
-
-# 测试任务执行
-pnpm cli chat
-# 输入: 读取 package.json 文件
-# 预期: 正常显示文件内容
-
-# 测试 /exit 命令
-pnpm cli chat
-# 输入: /exit
-# 预期: 显示 "✓ 已安全退出"
-```
-
-#### 相关提交
-- `effd671` - fix: Improve chat mode stability and signal handling
-
----
-
-## 网络搜索功能测试 (2026-03-08 新增)
-
-### TC-SEARCH-001: WebSearchSkill 功能测试
-
-#### 测试目标
-验证 WebSearchSkill 能否正确加载并响应搜索意图。
-
-#### 测试时间
-- **执行时间**: 17:10:23
-- **会话ID**: chat-1772903423573
-
-#### 用户输入
-```
-search latest AI news and summarize
-```
-
-#### 测试结果
-
-| 项目 | 预期结果 | 实际结果 | 状态 |
-|:---|:---|:---|:---:|
-| WebSearchSkill 加载 | 技能正确注册 | ✅ Skill registered: web-search | ✅ |
-| 搜索意图识别 | automation 类型 | ✅ intentType: "automation" | ✅ |
-| 内置技能数量 | 7 个 | ✅ count: 7 | ✅ |
-| DAG 构建 | 生成任务步骤 | ✅ taskCount: 5 | ✅ |
-| Agent 自动生成 | 可选功能 | ✅ AINewsSummarizerAgent 生成 | ✅ |
-
-#### 技能加载日志
-
-```
-[17:10:23] [INFO] Skill registered
-    skill: "web-search"
-    version: "1.0.0"
-    category: "automation"
-    builtin: true
-[17:10:23] [INFO] Builtin skills loaded
-    count: 7
-```
-
-#### 意图识别结果
-
-```
-[17:10:26] [INFO] Intent parsed successfully
-    intentType: "automation"
-    complexity: "medium"
-    estimatedSteps: 3
-```
-
-#### Agent 自动生成验证
-
-```
-[AgentGenerator] 📝 检测到需要新 Agent 类型: AINewsSummarizerAgent
-[AgentGenerator] ⚙️  生成 Agent 配置...
-[AgentGenerator] 💾 保存 Agent 配置...
-[AgentGenerator] ✅ 新 Agent 配置已生成: D:\test\agent\jiqun\config\agents\AINewsSummarizerAgent.system.md
-[AgentGenerator] 🔄 重新加载 AgentRegistry...
-[AgentGenerator] ✅ AgentRegistry 已重新加载，可用 Agent 数量: 9
-```
-
-#### 执行流程
-
-| 步骤 | Agent | 耗时 | 状态 |
-|:---|:---|:---:|:---:|
-| step_1 | AutomationAgent | 33.9s | ✅ |
-| step_2 | DataAgent | 11.0s | ✅ |
-| step_3 | AnalysisAgent | 23.4s | ✅ |
-| step_4 | GenericAgent | - | ⏸️ (超时) |
-
-#### 支持的搜索关键词
-
-| 类型 | 关键词 |
-|:---|:---|
-| 英文 | search, google, news, find, lookup |
-| 中文 | 搜索、查找、百度、新闻、搜索一下 |
-
-#### 相关修改
-
-| 文件 | 修改内容 |
-|:---|:---|
-| `src/skills/builtin/WebSearchSkill.ts` | 新增网络搜索技能 |
-| `src/skills/SkillManager.ts` | 注册 WebSearchSkill |
-| `src/llm/prompts.ts` | 添加搜索意图识别 |
-| `src/agents/BaseAgent.ts` | 修复 TypeScript 类型错误 |
-| `src/cli.ts` | 修复聊天模式稳定性 |
-
-#### 测试结论
-
-✅ **WebSearchSkill 功能正常**
-- 技能成功加载并注册
-- 搜索意图正确识别
-- DAG 构建和执行正常
-- Agent 自动生成功能可用
-
-#### 后续优化
-
-1. 实现真实的网络搜索 API 调用（当前使用模拟结果）
-2. 优化搜索结果处理和展示
-3. 支持更多搜索引擎选项
-
+*文档版本: 2.0*
+*最后更新: 2026-03-08*
+*维护者: NAC工程团队*

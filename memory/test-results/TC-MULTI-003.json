@@ -1,0 +1,18 @@
+{
+  "id": "TC-MULTI-003",
+  "category": "多Agent协作",
+  "input": "Design a complete mid-size e-commerce system architecture. Function modules: user center, product center, shopping cart, order system, review system, marketing system. Tech requirements: microservice architecture, MySQL + Redis + MongoDB, message queue (RabbitMQ/Kafka), Elasticsearch. Provide: 1) Service decomposition, 2) Database design, 3) API design, 4) Deployment architecture.",
+  "expectedAgents": [
+    "AnalysisAgent",
+    "CodeAgent",
+    "DataAgent",
+    "AutomationAgent"
+  ],
+  "success": false,
+  "output": "",
+  "error": " ERROR  Unknown option: 'file'\nDid you mean 'filter'? Use \"--config.unknown=value\" to force an unknown option.\n\nFor help, run: pnpm help run\n",
+  "executionTime": 1610,
+  "agentsUsed": [],
+  "taskCount": 0,
+  "timestamp": "2026-03-03T16:53:44.157Z"
+}

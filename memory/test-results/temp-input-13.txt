@@ -1,0 +1,1 @@
+Create automated test scripts for a REST API using Playwright: test user registration flow, test user login flow, test data CRUD operations, test error handling (401, 404, 500), generate HTML test report, and add data-driven testing with CSV data source.

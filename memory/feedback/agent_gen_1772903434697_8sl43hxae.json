@@ -1,0 +1,8 @@
+{
+  "agentType": "AINewsSummarizerAgent",
+  "taskId": "执行搜索并总结最新的AI新闻",
+  "configPath": "D:\\test\\agent\\jiqun\\config\\agents\\AINewsSummarizerAgent.system.md",
+  "timestamp": "2026-03-07T17:10:34.697Z",
+  "sessionId": "chat-1772903423573",
+  "userId": "default"
+}

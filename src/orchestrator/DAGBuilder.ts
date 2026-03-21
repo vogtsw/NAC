@@ -7,6 +7,7 @@ import { LLMClient } from '../llm/LLMClient.js';
 import { TaskPlanningPrompt } from '../llm/prompts.js';
 import { Intent, Task, DAGNode } from '../state/models.js';
 import { getLogger } from '../monitoring/logger.js';
+import { DAGValidator } from './DAGValidator.js';
 
 const logger = getLogger('DAGBuilder');
 
@@ -155,6 +156,28 @@ export class DAGBuilder {
     // Validate no cycles
     if (dag.hasCycle()) {
       throw new Error('Generated DAG contains circular dependencies');
+    }
+
+    // Validate and fix DAG quality (remove placeholders, add missing descriptions)
+    const validator = new DAGValidator();
+    const validationResult = validator.validate(dag, intent.primaryGoal);
+
+    if (!validationResult.isValid) {
+      logger.warn(
+        { issues: validationResult.issues },
+        'DAG validation found issues, applying fixes'
+      );
+
+      // 应用修复
+      const fixedDag = validator.applyFixes(dag, validationResult.fixes);
+
+      logger.info(
+        { fixedTasks: validationResult.fixes.size },
+        'DAG fixes applied'
+      );
+
+      logger.info({ taskCount: steps.length }, 'DAG built successfully');
+      return fixedDag;
     }
 
     logger.info({ taskCount: steps.length }, 'DAG built successfully');

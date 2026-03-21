@@ -1,0 +1,16 @@
+{
+  "id": "TC-AUTO-002",
+  "category": "自动化任务",
+  "input": "Create automated test scripts for a REST API using Playwright: test user registration flow, test user login flow, test data CRUD operations, test error handling (401, 404, 500), generate HTML test report, and add data-driven testing with CSV data source.",
+  "expectedAgents": [
+    "AutomationAgent",
+    "CodeAgent"
+  ],
+  "success": false,
+  "output": "",
+  "error": " ERROR  Unknown option: 'file'\nDid you mean 'filter'? Use \"--config.unknown=value\" to force an unknown option.\n\nFor help, run: pnpm help run\n",
+  "executionTime": 1481,
+  "agentsUsed": [],
+  "taskCount": 0,
+  "timestamp": "2026-03-03T16:52:57.653Z"
+}

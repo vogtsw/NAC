@@ -1,0 +1,15 @@
+{
+  "sessionId": "chat-1772940161754",
+  "taskId": "chat-1772940161754_1772940340214",
+  "timestamp": "2026-03-08T03:25:40.214Z",
+  "agentType": "GenericAgent",
+  "systemPromptUsed": "System prompt for GenericAgent",
+  "skillsUsed": [],
+  "executionTime": 130958,
+  "success": true,
+  "totalAgents": 0,
+  "agentSequence": [],
+  "parallelGroups": 1,
+  "actualExecutionTime": 130958,
+  "feedbackId": "feedback_1772940340214_jfhz1p930"
+}

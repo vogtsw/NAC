@@ -1,0 +1,1 @@
+Clean and transform inconsistent user data. Original examples: {"name":"张三","age":"25","email":"zhang@example.com"}, {"name":"李四","age":30,"email":"lisi@test.com"}, {"name":"王五","email":"wangwu@example.com"}. Requirements: 1) Unify field formats, 2) Fill missing values (age default 0), 3) Validate email format, 4) Remove duplicates, 5) Generate cleaned JSON.
