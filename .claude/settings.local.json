@@ -71,7 +71,8 @@
       "Bash(chmod +x scripts/prepare-for-commit.sh)",
       "Bash(bash scripts/prepare-for-commit.sh)",
       "Bash(git add:*)",
-      "Bash(pnpm install:*)"
+      "Bash(pnpm install:*)",
+      "Bash(netstat -ano)"
     ]
   }
 }

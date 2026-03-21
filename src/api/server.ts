@@ -5,12 +5,17 @@
 
 import fastify from 'fastify';
 import websocketPlugin from '@fastify/websocket';
+import staticPlugin from '@fastify/static';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { getOrchestrator } from '../orchestrator/Orchestrator.js';
 import { getSkillManager } from '../skills/SkillManager.js';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
 
 const logger = getLogger('APIServer');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const config = loadConfig();
 
@@ -87,25 +92,36 @@ export class APIServer {
    * Register all routes
    */
   private async registerRoutes(): Promise<void> {
-    // Serve static files (web interface)
-    this.server.register(require('@fastify/static'), {
-      root: import.meta.url.slice(7) + '/../../web',
-      prefix: '/',
-    });
+    try {
+      // Serve static files (web interface)
+      const webRoot = join(__dirname, '../../web');
+      logger.info({ webRoot }, 'Registering static file serving');
 
-    // Serve index.html at root
-    this.server.get('/', async (request, reply) => {
-      return reply.sendFile('index.html');
-    });
-
-    // Health check
-    this.server.get('/health', async (request, reply) => {
-      reply.send({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        version: '4.1.0',
+      await this.server.register(staticPlugin, {
+        root: webRoot,
+        prefix: '/',
       });
-    });
+
+      logger.info('Static file serving registered');
+
+      // Serve index.html at root
+      this.server.get('/', async (request, reply) => {
+        return reply.sendFile('index.html');
+      });
+
+      // Health check
+      this.server.get('/health', async (request, reply) => {
+        reply.send({
+          status: 'ok',
+          timestamp: new Date().toISOString(),
+          version: '4.2.0',
+        });
+      });
+
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack }, 'Failed to register routes');
+      throw error;
+    }
 
     // Task routes
     this.server.post('/api/v1/tasks/submit', async (request, reply) => {
