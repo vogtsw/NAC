@@ -1,1 +1,0 @@
-Develop a React task management component with TypeScript: TaskList component for display, TaskForm for adding tasks, task status toggle, Tailwind CSS styling, and PropTypes definitions.

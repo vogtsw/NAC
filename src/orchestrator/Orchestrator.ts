@@ -6,6 +6,7 @@
 import { LLMClient, getLLMClient } from '../llm/LLMClient.js';
 import { IntentParser } from './IntentParser.js';
 import { DAGBuilder } from './DAGBuilder.js';
+import { DAGBuilderV2 } from './DAGBuilderV2.js';
 import { Scheduler } from './Scheduler.js';
 import { getBlackboard } from '../state/Blackboard.js';
 import { getEventBus, EventType } from '../state/EventBus.js';
@@ -40,7 +41,7 @@ export interface OrchestratorConfig {
 export class Orchestrator {
   private llm: LLMClient;
   private intentParser: IntentParser;
-  private dagBuilder: DAGBuilder;
+  private dagBuilder: { build(intent: any): Promise<any> };
   private scheduler: Scheduler;
   private agentFactory: AgentFactory;
   private agentGenerator: AgentGenerator;
@@ -50,6 +51,7 @@ export class Orchestrator {
   private sessionStore: ReturnType<typeof getSessionStore>;
   private taskScheduler: ReturnType<typeof getTaskScheduler>;
   private feedbackCollector: ReturnType<typeof getFeedbackCollector>;
+  private useEnhancedDAGBuilder: boolean;
   private initialized: boolean = false;
 
   constructor(config: OrchestratorConfig = {}) {
@@ -57,7 +59,9 @@ export class Orchestrator {
 
     this.llm = getLLMClient();
     this.intentParser = new IntentParser(this.llm);
-    this.dagBuilder = new DAGBuilder(this.llm);
+    this.useEnhancedDAGBuilder =
+      config.enableDAGOptimization ?? appConfig.orchestrator.enableDAGOptimization;
+    this.dagBuilder = this.useEnhancedDAGBuilder ? new DAGBuilderV2(this.llm) : new DAGBuilder(this.llm);
     this.scheduler = new Scheduler(config.maxParallelAgents ?? appConfig.cluster.maxParallelAgents);
     this.agentFactory = new AgentFactory(this.llm);
     this.agentRegistry = getAgentRegistry();
@@ -68,7 +72,7 @@ export class Orchestrator {
     this.taskScheduler = getTaskScheduler();
     this.feedbackCollector = getFeedbackCollector();
 
-    logger.info('Orchestrator created');
+    logger.info({ useEnhancedDAGBuilder: this.useEnhancedDAGBuilder }, 'Orchestrator created');
   }
 
   /**
@@ -83,6 +87,7 @@ export class Orchestrator {
     try {
       await this.blackboard.initialize();
       await this.eventBus.initialize();
+      await this.agentRegistry.initialize();
       await this.sessionStore.ensureDirectories();
       await this.taskScheduler.initialize();
       await this.feedbackCollector.initialize();
@@ -99,7 +104,7 @@ export class Orchestrator {
    */
   async processRequest(request: ProcessRequest): Promise<any> {
     const { sessionId, userInput, context = {} } = request;
-    const userId = context.userId || context.scheduledTaskId ? 'scheduled' : 'default';
+    const userId = context.scheduledTaskId ? 'scheduled' : (context.userId || 'default');
     const startTime = Date.now();
 
     if (!this.initialized) {
@@ -233,14 +238,16 @@ export class Orchestrator {
       // 6. Schedule execution
       const taskResults = await this.scheduler.schedule(sessionId, dag, {
         agentFactory: this.agentFactory,
+        sessionId,
       });
 
       // 7. Format result for CLI/API response
       const result = this.formatResult(taskResults);
+      const normalizedTasks = this.normalizeTasks(result.data?.tasks);
 
       // 8. Save artifacts to separate files
-      if (result.success && result.data?.tasks) {
-        await this.saveArtifacts(sessionId, result.data.tasks);
+      if (result.success && normalizedTasks.length > 0) {
+        await this.saveArtifacts(sessionId, normalizedTasks);
       }
 
       // 9. Add agent response to session
@@ -260,8 +267,8 @@ export class Orchestrator {
       const agentUsed = dagTasks.length > 0 ? dagTasks[0].agentType : 'GenericAgent';
 
       const skillsUsed: string[] = [];
-      if (result.data?.tasks) {
-        for (const task of result.data.tasks) {
+      if (normalizedTasks.length > 0) {
+        for (const task of normalizedTasks) {
           if (task.skillUsed && !skillsUsed.includes(task.skillUsed)) {
             skillsUsed.push(task.skillUsed);
           }
@@ -294,7 +301,7 @@ export class Orchestrator {
               executionTime,
               success: result.success,
               totalAgents: dagTasks.length,
-              agentSequence: dagTasks.map(t => t.agentType),
+              agentSequence: dagTasks.map((t: any) => t.agentType),
               parallelGroups: 1, // TODO: Calculate from DAG
               actualExecutionTime: executionTime,
             });
@@ -372,7 +379,9 @@ export class Orchestrator {
       'search', '搜索', '查找', 'find', 'look for', 'lookup',
       'google', '百度', 'bing',
       'news', '新闻', 'latest', '最新',
-      'what is', 'what are', 'how to', 'define'
+      'what is', 'what are', 'how to', 'define',
+      'github', 'gitHub', 'trending', 'trend',
+      '热门', '最火', '本周', 'top10', 'top 10'
     ];
 
     // 检查是否包含搜索关键词
@@ -481,7 +490,7 @@ export class Orchestrator {
       return {
         success: false,
         error: failedTasks.map((t: any) => t.error).join('; '),
-        data: { tasks: taskResults },
+        data: { tasks: this.normalizeTasks(taskResults) },
       };
     }
 
@@ -495,13 +504,9 @@ export class Orchestrator {
       if (taskResult.result) {
         // Agent 可能返回 {taskId, result, analysis} 等
         const agentResult = taskResult.result;
-
-        if (agentResult.result) {
-          responses.push(agentResult.result);
-        } else if (agentResult.analysis) {
-          responses.push(agentResult.analysis);
-        } else if (agentResult.response) {
-          responses.push(agentResult.response);
+        const responseText = this.extractTaskResponseText(agentResult);
+        if (responseText) {
+          responses.push(responseText);
         }
 
         allData.push(agentResult);
@@ -524,6 +529,29 @@ export class Orchestrator {
         },
       },
     };
+  }
+
+  private normalizeTasks(tasks: any): any[] {
+    if (Array.isArray(tasks)) {
+      return tasks;
+    }
+    if (tasks && typeof tasks === 'object') {
+      return Object.values(tasks);
+    }
+    return [];
+  }
+
+  private extractTaskResponseText(agentResult: any): string {
+    if (!agentResult) return '';
+    if (typeof agentResult === 'string') return agentResult;
+    if (typeof agentResult.response === 'string') return agentResult.response;
+    if (typeof agentResult.analysis === 'string') return agentResult.analysis;
+    if (typeof agentResult.automationPlan === 'string') return agentResult.automationPlan;
+    if (typeof agentResult.result === 'string') return agentResult.result;
+    if (agentResult.result && typeof agentResult.result.response === 'string') {
+      return agentResult.result.response;
+    }
+    return '';
   }
 
   /**

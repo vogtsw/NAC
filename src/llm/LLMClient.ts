@@ -6,7 +6,7 @@
 import OpenAI from 'openai';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
-import { scanForSensitiveData, RiskLevel } from '../security/SensitiveDataFilter.js';
+import { scanForSensitiveData } from '../security/SensitiveDataFilter.js';
 
 const logger = getLogger('LLMClient');
 

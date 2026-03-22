@@ -136,7 +136,7 @@ export function getConfig(): Config {
     orchestrator: {
       llmProvider,
       llmConfig,
-      enableDAGOptimization: process.env.ENABLE_DAG_OPTIMIZATION === 'true',
+      enableDAGOptimization: process.env.ENABLE_DAG_OPTIMIZATION !== 'false',
       maxTaskRetries: parseInt(process.env.MAX_TASK_RETRIES || '3', 10),
     },
     agents: {

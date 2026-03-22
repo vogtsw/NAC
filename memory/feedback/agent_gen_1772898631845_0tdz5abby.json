@@ -1,8 +1,0 @@
-{
-  "agentType": "MoeModelAgent",
-  "taskId": "编写一个Moe模型并验证",
-  "configPath": "D:\\test\\agent\\jiqun\\config\\agents\\MoeModelAgent.system.md",
-  "timestamp": "2026-03-07T15:50:31.845Z",
-  "sessionId": "cli-1772898622918",
-  "userId": "default"
-}

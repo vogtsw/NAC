@@ -13,6 +13,7 @@
     "cli": "tsx src/cli.ts",
     "chat": "tsx src/cli.ts chat",
     "test": "vitest",
+    "test:web-long": "tsx tests/scripts/web-long-debug.ts",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src",
     "type-check": "tsc --noEmit",

@@ -10,14 +10,14 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { getOrchestrator } from '../orchestrator/Orchestrator.js';
 import { getSkillManager } from '../skills/SkillManager.js';
-import { loadConfig } from '../config/index.js';
+import { getInputValidator } from '../security/InputValidator.js';
+import { getBlackboard } from '../state/Blackboard.js';
+import { EventType, getEventBus } from '../state/EventBus.js';
 import { getLogger } from '../monitoring/logger.js';
 
 const logger = getLogger('APIServer');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-const config = loadConfig();
 
 export interface APIServerConfig {
   host?: string;
@@ -92,6 +92,8 @@ export class APIServer {
    * Register all routes
    */
   private async registerRoutes(): Promise<void> {
+    const inputValidator = getInputValidator();
+
     try {
       // Serve static files (web interface)
       const webRoot = join(__dirname, '../../web');
@@ -128,7 +130,7 @@ export class APIServer {
       try {
         const { user_input, session_id, context } = request.body as any;
 
-        if (!user_input) {
+        if (!user_input || typeof user_input !== 'string') {
           reply.code(400).send({
             success: false,
             error: 'Missing required field: user_input',
@@ -136,10 +138,23 @@ export class APIServer {
           return;
         }
 
+        const validation = inputValidator.validateUserInput(user_input, { isPrompt: true });
+        if (!validation.valid) {
+          reply.code(400).send({
+            success: false,
+            error: `Invalid user_input: ${validation.errors.join('; ')}`,
+            data: {
+              warnings: validation.warnings,
+              riskLevel: validation.riskLevel,
+            },
+          });
+          return;
+        }
+
         const sessionId = session_id || `api-${Date.now()}`;
         const result = await this.orchestrator.processRequest({
           sessionId,
-          userInput: user_input,
+          userInput: validation.sanitized || user_input,
           context: context || {},
         });
 
@@ -163,13 +178,24 @@ export class APIServer {
     this.server.get('/api/v1/tasks/:taskId', async (request, reply) => {
       try {
         const { taskId } = request.params as { taskId: string };
+        const blackboard = getBlackboard();
+        const state = await blackboard.getStateByTask(taskId);
 
-        // TODO: Implement task status retrieval
+        if (!state) {
+          reply.code(404).send({
+            success: false,
+            error: `Task not found: ${taskId}`,
+          });
+          return;
+        }
+
+        const taskState = state.tasks.get(taskId);
         reply.send({
           success: true,
           data: {
             taskId,
-            status: 'not_implemented',
+            sessionId: state.sessionId,
+            task: taskState || null,
           },
         });
       } catch (error: any) {
@@ -185,13 +211,24 @@ export class APIServer {
     this.server.get('/api/v1/sessions/:sessionId/tasks', async (request, reply) => {
       try {
         const { sessionId } = request.params as { sessionId: string };
+        const blackboard = getBlackboard();
+        const state = await blackboard.getState(sessionId);
 
-        // TODO: Implement session task list retrieval
+        if (!state) {
+          reply.code(404).send({
+            success: false,
+            error: `Session not found: ${sessionId}`,
+          });
+          return;
+        }
+
         reply.send({
           success: true,
           data: {
             sessionId,
-            tasks: [],
+            status: state.status,
+            metrics: state.metrics,
+            tasks: Array.from(state.tasks.values()),
           },
         });
       } catch (error: any) {
@@ -294,40 +331,105 @@ export class APIServer {
 
     // WebSocket route
     const orchestrator = this.orchestrator;
+    const eventBus = getEventBus();
     this.server.register(async function (fastify) {
       fastify.get('/ws', { websocket: true }, (connection, req) => {
-        connection.socket.on('message', async (message) => {
+        const socket: any = (connection as any)?.socket ?? connection;
+        if (!socket || typeof socket.on !== 'function' || typeof socket.send !== 'function') {
+          logger.error({ connectionType: typeof connection }, 'Invalid websocket connection object');
+          return;
+        }
+
+        socket.on('message', async (message: any) => {
+          let sessionIdForError: string | undefined;
           try {
             const data = JSON.parse(message.toString());
+            sessionIdForError = data?.sessionId;
 
             if (data.type === 'task') {
-              const result = await orchestrator.processRequest({
-                sessionId: data.sessionId || `ws-${Date.now()}`,
-                userInput: data.userInput,
-                context: data.context || {},
-              });
+              const sessionId = data.sessionId || `ws-${Date.now()}`;
+              sessionIdForError = sessionId;
+              const validation = inputValidator.validateUserInput(data.userInput || '', { isPrompt: true });
 
-              connection.socket.send(JSON.stringify({
-                type: 'result',
-                sessionId: result.sessionId || data.sessionId,
-                data: result,
+              if (!validation.valid) {
+                socket.send(JSON.stringify({
+                  type: 'error',
+                  sessionId,
+                  error: `Invalid user input: ${validation.errors.join('; ')}`,
+                  warnings: validation.warnings,
+                  riskLevel: validation.riskLevel,
+                  timestamp: new Date().toISOString(),
+                }));
+                return;
+              }
+
+              socket.send(JSON.stringify({
+                type: 'task.accepted',
+                sessionId,
+                timestamp: new Date().toISOString(),
               }));
+
+              const publishProgress = (eventType: EventType, payload: any) => {
+                if (payload?.sessionId !== sessionId) {
+                  return;
+                }
+                socket.send(JSON.stringify({
+                  type: 'task.progress',
+                  eventType,
+                  sessionId,
+                  payload,
+                  timestamp: new Date().toISOString(),
+                }));
+              };
+
+              const onTaskUpdated = (payload: any) => publishProgress(EventType.TASK_UPDATED, payload);
+              const onTaskCompleted = (payload: any) => publishProgress(EventType.TASK_COMPLETED, payload);
+              const onTaskFailed = (payload: any) => publishProgress(EventType.TASK_FAILED, payload);
+              const onSessionCompleted = (payload: any) => publishProgress(EventType.SESSION_COMPLETED, payload);
+              const onSessionFailed = (payload: any) => publishProgress(EventType.SESSION_FAILED, payload);
+
+              eventBus.on(EventType.TASK_UPDATED, onTaskUpdated);
+              eventBus.on(EventType.TASK_COMPLETED, onTaskCompleted);
+              eventBus.on(EventType.TASK_FAILED, onTaskFailed);
+              eventBus.on(EventType.SESSION_COMPLETED, onSessionCompleted);
+              eventBus.on(EventType.SESSION_FAILED, onSessionFailed);
+
+              try {
+                const result = await orchestrator.processRequest({
+                  sessionId,
+                  userInput: validation.sanitized || data.userInput,
+                  context: data.context || {},
+                });
+
+                socket.send(JSON.stringify({
+                  type: 'result',
+                  sessionId,
+                  data: result,
+                }));
+              } finally {
+                eventBus.off(EventType.TASK_UPDATED, onTaskUpdated);
+                eventBus.off(EventType.TASK_COMPLETED, onTaskCompleted);
+                eventBus.off(EventType.TASK_FAILED, onTaskFailed);
+                eventBus.off(EventType.SESSION_COMPLETED, onSessionCompleted);
+                eventBus.off(EventType.SESSION_FAILED, onSessionFailed);
+              }
             } else if (data.type === 'ping') {
-              connection.socket.send(JSON.stringify({
+              socket.send(JSON.stringify({
                 type: 'pong',
                 timestamp: new Date().toISOString(),
               }));
             }
           } catch (error: any) {
             logger.error({ error }, 'WebSocket message error');
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'error',
+              sessionId: sessionIdForError,
               error: error.message,
             }));
           }
         });
 
-        connection.socket.on('close', () => {
+        socket.on('close', () => {
           logger.info('WebSocket connection closed');
         });
       });

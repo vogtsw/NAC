@@ -1,1 +1,0 @@
-A web application has performance issues: 1) First screen load time exceeds 5 seconds, 2) API response time is long (average 2 seconds), 3) Some database queries are slow (over 10 seconds), 4) Response becomes slow under high concurrency. Provide: 1) Performance bottleneck analysis, 2) Optimization solution design, 3) Implementation plan, 4) Expected improvement assessment.

@@ -14,6 +14,7 @@ build/
 
 # Sensitive documents (contains API keys, internal notes)
 task.MD
+test.md
 error.MD
 
 # IDE
@@ -29,12 +30,16 @@ data/
 *.log
 
 # Memory and session data (runtime generated)
-memory/sessions/*.md
+memory/bin/
+memory/feedback/
+memory/sessions/
+memory/test-results/
 memory/artifacts/*/
 !memory/artifacts/.gitkeep
 
 # Claude Code local settings (may contain sensitive info)
 .claude/settings.local.json
+.claude/skills/
 
 # OS
 .DS_Store

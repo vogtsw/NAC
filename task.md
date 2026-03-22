@@ -587,7 +587,7 @@ FeedbackCollector (收集反馈 → 进化优化)
 
 ### LLM配置
 ```bash
-ZHIPU_API_KEY=720a710f969c4205ba062583c96171a2.lu1a4JdyoBxWNp0I
+ZHIPU_API_KEY=your-zhipu-api-key
 ZHIPU_MODEL=glm-4-flash
 ```
 

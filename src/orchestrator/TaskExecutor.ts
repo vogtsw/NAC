@@ -1,15 +1,14 @@
 /**
- * 增强的任务执行器 - 集成输出验证和反思系统
+ * TaskExecutor
+ * Execute tasks with validation and reflexion retries.
  */
 
-import { Task } from '../state/models.js';
 import { AgentFactory } from '../agents/AgentFactory.js';
-import { getBlackboard } from '../state/Blackboard.js';
-import { getEventBus, EventType } from '../state/EventBus.js';
 import { getLogger } from '../monitoring/logger.js';
-import { OutputValidator } from '../reliability/OutputValidator.js';
+import { Task } from '../state/models.js';
+import { getBlackboard } from '../state/Blackboard.js';
+import { OutputValidator, ValidationResult } from '../reliability/OutputValidator.js';
 import { ReflexionSystem, ExecutionAttempt } from '../reliability/ReflexionSystem.js';
-import { fixUnicodeDisplay } from './Scheduler.js';
 
 const logger = getLogger('TaskExecutor');
 
@@ -24,193 +23,185 @@ export interface TaskExecutionResult {
   result: any;
   duration: number;
   validationPassed: boolean;
+  validationScore: number;
   attempts: ExecutionAttempt[];
 }
 
-/**
- * 增强的任务执行器 - 带输出验证和反思
- */
+export interface TaskExecutorConfig {
+  enableOutputValidation?: boolean;
+  enableReflexion?: boolean;
+  minQualityScore?: number;
+  maxReflexionAttempts?: number;
+}
+
 export class TaskExecutor {
-  private outputValidator: OutputValidator;
-  private reflexionSystem: ReflexionSystem;
+  private validator: OutputValidator;
+  private reflexion: ReflexionSystem;
+  private config: Required<TaskExecutorConfig>;
 
-  constructor() {
-    this.outputValidator = new OutputValidator({
-      minQualityScore: 60
+  constructor(config: TaskExecutorConfig = {}) {
+    this.config = {
+      enableOutputValidation: config.enableOutputValidation ?? true,
+      enableReflexion: config.enableReflexion ?? true,
+      minQualityScore: config.minQualityScore ?? 60,
+      maxReflexionAttempts: Math.max(1, config.maxReflexionAttempts ?? 2),
+    };
+    this.validator = new OutputValidator({
+      minQualityScore: this.config.minQualityScore,
     });
-
-    this.reflexionSystem = new ReflexionSystem({
-      maxAttempts: 2, // 每个任务最多重试1次（共2次机会）
-      enableLearning: true,
-      storeFailures: true
-    });
+    this.reflexion = new ReflexionSystem(
+      { maxAttempts: this.config.maxReflexionAttempts },
+      this.validator
+    );
   }
 
-  /**
-   * 执行任务（带验证和反思）
-   */
-  async executeWithValidation(
-    task: Task,
-    context: TaskExecutorContext
-  ): Promise<TaskExecutionResult> {
-    const { sessionId, userIntent, agentFactory } = context;
+  async executeWithValidation(task: Task, context: TaskExecutorContext): Promise<TaskExecutionResult> {
     const blackboard = getBlackboard();
-    const eventBus = getEventBus();
-
-    logger.info({ taskId: task.id, taskName: fixUnicodeDisplay(task.name) }, 'Starting task with validation');
-
     const startTime = Date.now();
+    const userIntent = context.userIntent || task.description || task.name;
+
+    await blackboard.updateTaskStatus(context.sessionId, task.id, 'running', {
+      agentType: task.agentType,
+      requiredSkills: task.requiredSkills || [],
+      taskName: task.name,
+    });
 
     try {
-      // 更新任务状态
-      await blackboard.updateTaskStatus(sessionId, task.id, 'running');
-      await eventBus.publish(EventType.TASK_UPDATED, {
-        sessionId,
-        taskId: task.id,
-        status: 'running'
-      });
+      const execution = this.config.enableReflexion
+        ? await this.reflexion.executeWithReflexion(
+            task.id,
+            userIntent,
+            task.agentType,
+            async (attempt, previousValidation) => {
+              const rawResult = await this.executeOnce(
+                this.buildTaskAttempt(task, attempt, previousValidation),
+                context
+              );
+              return {
+                output: this.extractOutputText(rawResult),
+                value: rawResult,
+              };
+            },
+            { taskId: task.id, sessionId: context.sessionId }
+          )
+        : await this.executeSingleAttempt(task, context, userIntent);
 
-      // 使用反思系统执行任务
-      const { output, attempts } = await this.reflexionSystem.executeWithReflexion(
-        task.id,
-        userIntent || task.description || task.name,
-        task.agentType,
-        async () => this.executeOnce(task, context, agentFactory),
-        { task, sessionId }
-      );
+      if (this.config.enableOutputValidation && !execution.validation.isValid) {
+        throw new Error(
+          `Validation failed (score=${execution.validation.score}): ${execution.validation.issues.join('; ')}`
+        );
+      }
 
       const duration = Date.now() - startTime;
-
-      // 检查最终输出质量
-      const finalValidation = await this.outputValidator.validate(
-        userIntent || task.description,
-        output,
-        { task, sessionId }
-      );
-
-      // 记录结果
-      await blackboard.recordTaskResult(sessionId, task.id, output);
-      await eventBus.publish(EventType.TASK_COMPLETED, {
-        sessionId,
-        taskId: task.id,
-        result: output,
+      await blackboard.updateTaskStatus(context.sessionId, task.id, 'completed', {
+        agentType: task.agentType,
+        requiredSkills: task.requiredSkills || [],
+        taskName: task.name,
         duration,
-        validationScore: finalValidation.score
+      });
+      await blackboard.recordTaskResult(context.sessionId, task.id, execution.value, {
+        agentType: task.agentType,
+        requiredSkills: task.requiredSkills || [],
+        taskName: task.name,
+        duration,
       });
 
-      logger.info({
-        taskId: task.id,
-        duration,
-        validationScore: finalValidation.score,
-        attemptsCount: attempts.length
-      }, 'Task completed with validation');
+      logger.info(
+        {
+          taskId: task.id,
+          duration,
+          validationScore: execution.validation.score,
+          attempts: execution.attempts.length,
+        },
+        'Task executed with TaskExecutor'
+      );
 
       return {
         taskId: task.id,
-        result: output,
+        result: execution.value,
         duration,
-        validationPassed: finalValidation.isValid,
-        attempts
+        validationPassed: execution.validation.isValid,
+        validationScore: execution.validation.score,
+        attempts: execution.attempts,
       };
-
     } catch (error: any) {
       const duration = Date.now() - startTime;
-
-      logger.error({
-        taskId: task.id,
+      await blackboard.updateTaskStatus(context.sessionId, task.id, 'failed', {
+        agentType: task.agentType,
+        requiredSkills: task.requiredSkills || [],
+        taskName: task.name,
         error: error.message,
-        duration
-      }, 'Task failed after all retries');
-
-      await blackboard.updateTaskStatus(sessionId, task.id, 'failed');
-      await eventBus.publish(EventType.TASK_FAILED, {
-        sessionId,
-        taskId: task.id,
-        error: error.message
+        duration,
       });
-
       throw error;
     }
   }
 
-  /**
-   * 执行一次任务（内部方法）
-   */
-  private async executeOnce(
+  private async executeSingleAttempt(
     task: Task,
     context: TaskExecutorContext,
-    agentFactory: AgentFactory
-  ): Promise<string> {
-    const { sessionId } = context;
-
-    // 创建Agent
-    const agent = await agentFactory.create(task.agentType, {
-      taskId: task.id,
-      skills: task.requiredSkills,
-      searchQuery: task.searchQuery // 传递搜索查询
-    });
-
-    // 执行任务
-    const result = await agent.execute(task);
-
-    // 提取输出文本
-    if (typeof result === 'string') {
-      return result;
-    }
-
-    if (result?.response) {
-      return result.response;
-    }
-
-    if (result?.output) {
-      return result.output;
-    }
-
-    // 如果是对象，转换为JSON字符串
-    if (typeof result === 'object') {
-      return JSON.stringify(result, null, 2);
-    }
-
-    return String(result);
-  }
-
-  /**
-   * 快速验证输出（不使用LLM，用于简单任务）
-   */
-  private quickValidate(output: string): { passed: boolean; issues: string[] } {
-    const issues: string[] = [];
-
-    // 检查1: 是否为空
-    if (!output || output.trim().length === 0) {
-      issues.push('输出为空');
-      return { passed: false, issues };
-    }
-
-    // 检查2: 是否包含占位符
-    const placeholders = [
-      '步骤名称（使用中文）',
-      'TODO',
-      '待填写',
-      'TBD',
-      '[插入',
-      '步骤 1',
-      '步骤 2'
-    ];
-
-    for (const placeholder of placeholders) {
-      if (output.includes(placeholder)) {
-        issues.push(`输出包含占位符: ${placeholder}`);
-      }
-    }
-
-    // 检查3: 是否过短
-    if (output.length < 50) {
-      issues.push('输出过短，可能不完整');
-    }
+    userIntent: string
+  ): Promise<{
+    output: string;
+    value: any;
+    validation: ValidationResult;
+    attempts: ExecutionAttempt[];
+  }> {
+    const rawResult = await this.executeOnce(task, context);
+    const output = this.extractOutputText(rawResult);
+    const validation = this.config.enableOutputValidation
+      ? await this.validator.validate(userIntent, output, { taskId: task.id, sessionId: context.sessionId })
+      : { isValid: true, score: 100, issues: [], suggestions: [], shouldRetry: false };
 
     return {
-      passed: issues.length === 0,
-      issues
+      output,
+      value: rawResult,
+      validation,
+      attempts: [
+        {
+          attemptNumber: 1,
+          agent: task.agentType,
+          input: userIntent,
+          output,
+          validation,
+          timestamp: Date.now(),
+          duration: 0,
+        },
+      ],
     };
   }
+
+  private buildTaskAttempt(task: Task, attempt: number, previousValidation?: ValidationResult): Task {
+    if (attempt <= 1 || !previousValidation) return task;
+
+    const retryHint = previousValidation.suggestions.length > 0
+      ? previousValidation.suggestions.join('; ')
+      : previousValidation.issues.join('; ');
+
+    return {
+      ...task,
+      description: `${task.description}\n\n[Retry attempt ${attempt} guidance]\n${retryHint}`,
+    };
+  }
+
+  private async executeOnce(task: Task, context: TaskExecutorContext): Promise<any> {
+    const agent = await context.agentFactory.create(task.agentType, {
+      taskId: task.id,
+      skills: task.requiredSkills || [],
+    });
+    return await agent.execute(task);
+  }
+
+  private extractOutputText(result: any): string {
+    if (typeof result === 'string') return result;
+    if (result?.response && typeof result.response === 'string') return result.response;
+    if (result?.result && typeof result.result === 'string') return result.result;
+    if (result?.analysis && typeof result.analysis === 'string') return result.analysis;
+    try {
+      return JSON.stringify(result, null, 2);
+    } catch {
+      return String(result);
+    }
+  }
 }
+

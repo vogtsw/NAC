@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { getSkillPermissionManager, PermissionCheckResult } from '../security/SkillPermissionManager.js';
 import { getInputValidator } from '../security/InputValidator.js';
-import { Permission } from '../security/permissions.js';
+import { Permission } from '../state/models.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -306,8 +306,8 @@ export class SkillManager {
   /**
    * Determine required permissions based on skill type and parameters
    */
-  private determineRequiredPermissions(skillName: string, params: any): string[] {
-    const permissions: string[] = [];
+  private determineRequiredPermissions(skillName: string, params: any): Permission[] {
+    const permissions: Permission[] = [];
 
     // File operations
     if (skillName === 'file-ops') {

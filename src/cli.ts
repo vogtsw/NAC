@@ -427,31 +427,52 @@ async function cmdChat(): Promise<void> {
       const elapsed = Date.now() - startTime;
 
       // 显示结果
-      if (result.success) {
-        // 尝试多种方式显示结果
-        const responseText = result.data?.response || result.response || result.data?.output || result.data?.answer;
+      const responseText = result.data?.response || result.response || result.data?.output || result.data?.answer;
+      const rawTasks = result.data?.tasks;
+      const tasks = Array.isArray(rawTasks)
+        ? rawTasks
+        : rawTasks && typeof rawTasks === 'object'
+          ? Object.values(rawTasks)
+          : [];
 
+      if (result.success) {
         if (responseText) {
-          // 如果有文本响应，直接显示
           console.log(String(responseText));
-        } else if (result.data?.tasks && result.data.tasks.length > 0) {
-          // 如果没有 response 字段，显示任务结果摘要
+        } else if (tasks.length > 0) {
           console.log('\n\x1b[1;33m任务完成摘要:\x1b[0m');
-          for (const task of result.data.tasks) {
-            const status = task.success ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
-            console.log(`  ${status} ${task.name || task.id}`);
-            if (task.result) {
+          for (const task of tasks) {
+            const taskName = task?.name || task?.id || task?.taskId || 'unknown-task';
+            const taskFailed = Boolean(task?.error) || task?.success === false || task?.validationPassed === false;
+            const status = taskFailed ? '\x1b[31m✗\x1b[0m' : '\x1b[32m✓\x1b[0m';
+            console.log(`  ${status} ${taskName}`);
+
+            if (task?.error) {
+              console.log(`     ${String(task.error)}`);
+              continue;
+            }
+
+            if (task?.result !== undefined) {
               const resultPreview = JSON.stringify(task.result).substring(0, 100);
               console.log(`     ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`);
             }
           }
         } else {
-          // 其他情况显示完整数据
           console.log(JSON.stringify(result.data || result, null, 2));
         }
         console.log(`\n\x1b[1;32m✓ 完成 (${(elapsed / 1000).toFixed(2)}s)\x1b[0m`);
       } else {
         console.log(`\n\x1b[1;31m✗ 失败: ${result.error || '未知错误'}\x1b[0m`);
+        if (tasks.length > 0) {
+          console.log('\n\x1b[1;33m任务失败摘要:\x1b[0m');
+          for (const task of tasks) {
+            const taskName = task?.name || task?.id || task?.taskId || 'unknown-task';
+            const taskError = task?.error || task?.result?.error;
+            console.log(`  \x1b[31m✗\x1b[0m ${taskName}`);
+            if (taskError) {
+              console.log(`     ${String(taskError)}`);
+            }
+          }
+        }
       }
 
       // 保存历史

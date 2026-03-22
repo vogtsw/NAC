@@ -1,412 +1,547 @@
-/**
- * NAC Web Application
- * 前端交互界面
- */
-
-class NACApp {
+﻿class NACApp {
     constructor() {
-        this.apiUrl = 'http://localhost:3000';
-        this.wsUrl = 'ws://localhost:3000/ws';
+        this.apiUrl = window.location.origin;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        this.wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+
         this.ws = null;
         this.isConnected = false;
-        this.sessionId = null;
+
         this.taskCount = {
             running: 0,
-            completed: 0
+            completed: 0,
+            failed: 0,
         };
+
+        this.pendingRuns = new Map();
+        this.runningAgentCounts = new Map();
+        this.runningSkillCounts = new Map();
+        this.progressDedup = new Set();
+        this.sessionFinalizeTimers = new Map();
+        this.pingTimer = null;
 
         this.init();
     }
 
-    /**
-     * 初始化应用
-     */
     async init() {
-        this.log('info', '正在初始化NAC控制台...');
+        this.bindHotkeys();
+        this.renderActiveRuntime();
+        this.log('info', 'Initializing NAC console');
 
-        // 连接到服务器
         await this.connect();
-
-        // 加载系统信息
         await this.loadSystemInfo();
 
-        this.log('success', 'NAC控制台初始化完成');
+        this.log('success', 'Console ready');
     }
 
-    /**
-     * 连接到服务器
-     */
+    bindHotkeys() {
+        const input = document.getElementById('userInput');
+        input.addEventListener('keydown', (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                event.preventDefault();
+                this.submitTask();
+            }
+        });
+    }
+
     async connect() {
         try {
-            // 先检查HTTP连接
             const response = await fetch(`${this.apiUrl}/health`);
-            const data = await response.json();
+            const health = await response.json();
 
-            if (data.status === 'ok') {
-                this.setConnectionStatus(true);
-                this.log('success', '已连接到NAC服务器');
-
-                // 连接WebSocket
-                this.connectWebSocket();
+            if (health.status !== 'ok') {
+                throw new Error('Health check failed');
             }
+
+            this.setConnectionStatus(true);
+            this.log('success', 'Connected to API service');
+
+            this.connectWebSocket();
         } catch (error) {
             this.setConnectionStatus(false);
-            this.log('error', `连接失败: ${error.message}`);
-            this.showToast('无法连接到服务器，请确保API服务已启动', 'error');
+            this.log('error', `Connection failed: ${error.message}`);
+            this.showToast('Cannot connect to server. Start API first.', 'error');
         }
     }
 
-    /**
-     * 连接WebSocket
-     */
     connectWebSocket() {
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
         try {
             this.ws = new WebSocket(this.wsUrl);
 
             this.ws.onopen = () => {
-                this.log('info', 'WebSocket连接已建立');
+                this.setConnectionStatus(true);
+                this.log('info', 'WebSocket connected');
+                this.startHeartbeat();
             };
 
             this.ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                this.handleWebSocketMessage(data);
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                } catch (error) {
+                    this.log('warn', `Invalid WS payload: ${event.data}`);
+                }
             };
 
-            this.ws.onerror = (error) => {
-                this.log('error', 'WebSocket错误');
+            this.ws.onerror = () => {
+                this.log('error', 'WebSocket error');
             };
 
             this.ws.onclose = () => {
-                this.log('warn', 'WebSocket连接已关闭');
                 this.setConnectionStatus(false);
+                this.log('warn', 'WebSocket closed, retrying in 3s');
+                this.stopHeartbeat();
+                setTimeout(() => this.connectWebSocket(), 3000);
             };
         } catch (error) {
-            this.log('error', `WebSocket连接失败: ${error.message}`);
+            this.setConnectionStatus(false);
+            this.log('error', `WebSocket connection failed: ${error.message}`);
         }
     }
 
-    /**
-     * 处理WebSocket消息
-     */
     handleWebSocketMessage(data) {
         switch (data.type) {
+            case 'task.accepted':
+                this.log('info', `Task accepted (${data.sessionId})`);
+                break;
+
+            case 'task.progress':
+                this.handleTaskProgress(data);
+                break;
+
             case 'result':
                 this.handleTaskResult(data);
                 break;
+
             case 'error':
-                this.log('error', data.error);
+                this.handleTaskError(data);
                 break;
+
             case 'pong':
-                // 心跳响应
                 break;
+
             default:
-                this.log('info', `收到消息: ${JSON.stringify(data)}`);
+                this.log('info', `WS: ${JSON.stringify(data)}`);
         }
     }
 
-    /**
-     * 处理任务结果
-     */
-    handleTaskResult(data) {
-        this.hideLoading();
-        this.taskCount.running--;
-        this.taskCount.completed++;
-        this.updateTaskCount();
+    handleTaskProgress(progressEvent) {
+        const { eventType, sessionId, payload = {} } = progressEvent;
+        this.setLastRuntimeEvent(eventType, sessionId, payload);
+        const dedupKey = [
+            eventType,
+            sessionId,
+            payload.taskId || '',
+            payload.status || '',
+        ].join('|');
 
-        if (data.data && data.data.success) {
-            const result = data.data.data;
-            this.displayResult(result);
-            this.log('success', `任务完成 - SessionID: ${data.sessionId}`);
-        } else {
-            this.log('error', '任务执行失败');
-            this.showToast('任务执行失败', 'error');
+        if (this.progressDedup.has(dedupKey)) {
+            return;
         }
-    }
+        this.progressDedup.add(dedupKey);
 
-    /**
-     * 提交任务
-     */
-    async submitTask() {
-        const input = document.getElementById('userInput').value.trim();
+        if (this.progressDedup.size > 2000) {
+            this.progressDedup.clear();
+        }
 
-        if (!input) {
-            this.showToast('请输入任务描述', 'error');
+        if (eventType === 'task.updated' && payload.status === 'running') {
+            this.markTaskRunning(sessionId, payload);
+            this.log(
+                'info',
+                `Running: ${payload.taskName || payload.taskId} | ${payload.agentType || 'UnknownAgent'}`
+            );
             return;
         }
 
-        this.showLoading();
-        this.log('info', `提交任务: ${input.substring(0, 50)}...`);
+        if (eventType === 'task.updated' && payload.status === 'failed') {
+            this.markTaskFinished(sessionId, payload.taskId);
+            this.log('error', `Failed: ${payload.taskName || payload.taskId} | ${payload.error || 'Unknown error'}`);
+            return;
+        }
 
-        this.taskCount.running++;
-        this.updateTaskCount();
+        if (eventType === 'task.completed') {
+            this.markTaskFinished(sessionId, payload.taskId);
+            this.log(
+                'success',
+                `Completed: ${payload.taskName || payload.taskId} (${((payload.duration || 0) / 1000).toFixed(2)}s)`
+            );
+            return;
+        }
 
-        try {
-            const response = await fetch(`${this.apiUrl}/api/v1/tasks/submit`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    user_input: input,
-                    session_id: this.sessionId || `web-${Date.now()}`
-                })
-            });
+        if (eventType === 'task.failed') {
+            this.markTaskFinished(sessionId, payload.taskId);
+            this.log('error', `Failed: ${payload.taskName || payload.taskId} | ${payload.error || 'Unknown error'}`);
+            return;
+        }
 
-            const data = await response.json();
+        if (eventType === 'session.completed') {
+            this.log('success', `Session completed: ${sessionId}`);
+            this.scheduleSessionCompletionGuard(sessionId);
+            return;
+        }
 
-            if (data.success) {
-                this.sessionId = data.data.session_id;
-                this.log('info', `任务已提交 - SessionID: ${this.sessionId}`);
-
-                // 如果是同步响应，直接显示结果
-                if (data.data.result) {
-                    this.handleTaskResult({
-                        sessionId: this.sessionId,
-                        data: data.data.result
-                    });
-                }
-            } else {
-                this.hideLoading();
-                this.taskCount.running--;
-                this.updateTaskCount();
-                this.log('error', data.error);
-                this.showToast(data.error, 'error');
-            }
-        } catch (error) {
-            this.hideLoading();
-            this.taskCount.running--;
-            this.updateTaskCount();
-            this.log('error', `提交失败: ${error.message}`);
-            this.showToast('提交任务失败', 'error');
+        if (eventType === 'session.failed') {
+            this.handleSessionFailed(sessionId);
         }
     }
 
-    /**
-     * 快捷任务
-     */
-    quickTask(type) {
-        const tasks = {
-            github: '总结最新的github前10热搜的ai项目，给出简短摘要',
-            code: '分析当前项目的代码质量，给出改进建议',
-            api: '生成一个用户认证RESTful API，包含登录、注册、权限验证',
-            test: '为用户模块生成单元测试，使用vitest框架'
-        };
+    markTaskRunning(sessionId, payload) {
+        const run = this.ensureRun(sessionId);
+        if (!payload.taskId) {
+            return;
+        }
 
-        const input = document.getElementById('userInput');
-        input.value = tasks[type] || '';
-        this.showToast('任务已填充，请点击执行', 'info');
+        const skills = Array.isArray(payload.requiredSkills)
+            ? [...new Set(payload.requiredSkills.filter(Boolean))]
+            : [];
+
+        if (run.taskMeta.has(payload.taskId)) {
+            const current = run.taskMeta.get(payload.taskId);
+            let changed = false;
+
+            if (payload.agentType && payload.agentType !== current.agentType) {
+                this.decrementCounter(this.runningAgentCounts, current.agentType);
+                current.agentType = payload.agentType;
+                this.incrementCounter(this.runningAgentCounts, current.agentType);
+                changed = true;
+            }
+
+            for (const skill of skills) {
+                if (!current.skills.includes(skill)) {
+                    current.skills.push(skill);
+                    this.incrementCounter(this.runningSkillCounts, skill);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                this.renderActiveRuntime();
+            }
+            return;
+        }
+
+        const agentType = payload.agentType || 'GenericAgent';
+        run.taskMeta.set(payload.taskId, { agentType, skills });
+        this.incrementCounter(this.runningAgentCounts, agentType);
+
+        for (const skill of skills) {
+            this.incrementCounter(this.runningSkillCounts, skill);
+        }
+
+        this.renderActiveRuntime();
     }
 
-    /**
-     * 加载系统信息
-     */
+    markTaskFinished(sessionId, taskId) {
+        const run = this.pendingRuns.get(sessionId);
+        if (!run || !run.taskMeta.has(taskId)) {
+            return;
+        }
+
+        const meta = run.taskMeta.get(taskId);
+        run.taskMeta.delete(taskId);
+
+        this.decrementCounter(this.runningAgentCounts, meta.agentType);
+        for (const skill of meta.skills) {
+            this.decrementCounter(this.runningSkillCounts, skill);
+        }
+
+        this.renderActiveRuntime();
+    }
+
+    ensureRun(sessionId) {
+        if (!this.pendingRuns.has(sessionId)) {
+            this.pendingRuns.set(sessionId, { taskMeta: new Map() });
+        }
+
+        return this.pendingRuns.get(sessionId);
+    }
+
+    cleanupRun(sessionId) {
+        const run = this.pendingRuns.get(sessionId);
+        if (!run) {
+            return;
+        }
+
+        for (const meta of run.taskMeta.values()) {
+            this.decrementCounter(this.runningAgentCounts, meta.agentType);
+            for (const skill of meta.skills) {
+                this.decrementCounter(this.runningSkillCounts, skill);
+            }
+        }
+
+        this.pendingRuns.delete(sessionId);
+        this.renderActiveRuntime();
+    }
+
+    handleTaskError(data) {
+        const sessionId = data?.sessionId;
+        const errorMessage = data?.error || 'Unknown websocket error';
+
+        if (sessionId) {
+            this.cleanupRun(sessionId);
+            this.clearSessionFinalizeTimer(sessionId);
+            if (this.taskCount.running > 0) {
+                this.taskCount.running -= 1;
+            }
+            this.taskCount.failed += 1;
+            this.updateTaskCount();
+        }
+
+        this.log('error', errorMessage);
+        this.showToast(errorMessage, 'error');
+    }
+
+    incrementCounter(counterMap, key) {
+        const current = counterMap.get(key) || 0;
+        counterMap.set(key, current + 1);
+    }
+
+    decrementCounter(counterMap, key) {
+        const current = counterMap.get(key) || 0;
+        if (current <= 1) {
+            counterMap.delete(key);
+        } else {
+            counterMap.set(key, current - 1);
+        }
+    }
+
+    renderActiveRuntime() {
+        const agentsEl = document.getElementById('activeAgents');
+        const skillsEl = document.getElementById('activeSkills');
+
+        agentsEl.innerHTML = this.renderChipGroup(this.runningAgentCounts, 'No active agents');
+        skillsEl.innerHTML = this.renderChipGroup(this.runningSkillCounts, 'No active skills');
+
+        const runState = document.getElementById('runStateText');
+        if (this.taskCount.running > 0) {
+            runState.className = 'run-pill running';
+            runState.textContent = `${this.taskCount.running} Running`;
+        } else {
+            runState.className = 'run-pill idle';
+            runState.textContent = 'Idle';
+        }
+    }
+
+    renderChipGroup(counterMap, emptyText) {
+        if (counterMap.size === 0) {
+            return `<span class="chip chip-idle">${emptyText}</span>`;
+        }
+
+        const chips = [];
+        for (const [name, count] of counterMap.entries()) {
+            chips.push(`<span class="chip">${this.escapeHtml(name)} x${count}</span>`);
+        }
+        return chips.join('');
+    }
+
+    async submitTask() {
+        const inputEl = document.getElementById('userInput');
+        const userInput = inputEl.value.trim();
+
+        if (!userInput) {
+            this.showToast('Please enter a task description first.', 'error');
+            return;
+        }
+
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            this.showToast('WebSocket is disconnected. Reconnecting...', 'error');
+            this.connectWebSocket();
+            return;
+        }
+
+        const sessionId = `web-${Date.now()}`;
+        this.ensureRun(sessionId);
+        this.clearSessionFinalizeTimer(sessionId);
+
+        this.taskCount.running += 1;
+        this.updateTaskCount();
+
+        this.log('info', `Submitting task (${sessionId}): ${userInput.slice(0, 80)}`);
+
+        this.ws.send(JSON.stringify({
+            type: 'task',
+            sessionId,
+            userInput,
+            context: {
+                source: 'web-console',
+            },
+        }));
+
+        inputEl.focus();
+    }
+
+    handleTaskResult(message) {
+        const sessionId = message.sessionId;
+        const result = message.data;
+
+        this.cleanupRun(sessionId);
+        this.clearSessionFinalizeTimer(sessionId);
+
+        if (this.taskCount.running > 0) {
+            this.taskCount.running -= 1;
+        }
+
+        if (result && result.success) {
+            this.taskCount.completed += 1;
+            this.updateTaskCount();
+            this.displayResult(result.data || result, sessionId);
+            this.log('success', `Task finished: ${sessionId}`);
+        } else {
+            this.taskCount.failed += 1;
+            this.updateTaskCount();
+            const errorMessage = result?.error || 'Unknown execution error';
+            this.log('error', `Task failed: ${errorMessage}`);
+            this.showToast(errorMessage, 'error');
+        }
+    }
+
+    quickTask(type) {
+        const templates = {
+            github: 'Summarize top 10 trending AI projects on GitHub with short highlights.',
+            code: 'Review this repository architecture and list top code quality improvements.',
+            api: 'Generate a RESTful user auth API design with login/register/permission checks.',
+            test: 'Generate core unit tests for user module using Vitest.',
+        };
+
+        document.getElementById('userInput').value = templates[type] || '';
+        this.showToast('Template inserted.', 'success');
+    }
+
     async loadSystemInfo() {
         try {
-            // 加载Agents
-            const agentsRes = await fetch(`${this.apiUrl}/api/v1/agents`);
+            const [agentsRes, skillsRes] = await Promise.all([
+                fetch(`${this.apiUrl}/api/v1/agents`),
+                fetch(`${this.apiUrl}/api/v1/skills`),
+            ]);
+
             const agentsData = await agentsRes.json();
+            const skillsData = await skillsRes.json();
+
             if (agentsData.success) {
                 document.getElementById('agentCount').textContent = agentsData.data.total;
             }
 
-            // 加载Skills
-            const skillsRes = await fetch(`${this.apiUrl}/api/v1/skills`);
-            const skillsData = await skillsRes.json();
             if (skillsData.success) {
                 document.getElementById('skillCount').textContent = skillsData.data.total;
             }
         } catch (error) {
-            this.log('warn', `加载系统信息失败: ${error.message}`);
+            this.log('warn', `Failed to load system info: ${error.message}`);
         }
     }
 
-    /**
-     * 显示结果
-     */
-    displayResult(result) {
+    displayResult(result, sessionId) {
         const output = document.getElementById('output');
 
-        // 移除占位符
-        const placeholder = output.querySelector('.output-placeholder');
-        if (placeholder) {
-            placeholder.remove();
+        const empty = output.querySelector('.empty-state');
+        if (empty) {
+            empty.remove();
         }
 
-        // 创建结果项
         const resultItem = document.createElement('div');
         resultItem.className = 'result-item';
 
-        const time = new Date().toLocaleTimeString();
+        const summary = result.summary || result.data?.summary || {};
+        const responseText =
+            result.response ||
+            result.data?.response ||
+            this.formatTasksOutput(result.tasks || result.data?.tasks) ||
+            JSON.stringify(result, null, 2);
 
-        let content = '';
-        let metrics = '';
-
-        // 处理不同类型的结果
-        if (result.response) {
-            content = this.formatOutput(result.response);
-        } else if (result.data) {
-            if (result.data.response) {
-                content = this.formatOutput(result.data.response);
-            } else if (result.data.tasks) {
-                content = this.formatTasksOutput(result.data.tasks);
-            }
-
-            // 添加指标
-            if (result.data.summary) {
-                metrics = this.formatMetrics(result.data.summary);
-            }
-        } else {
-            content = this.formatOutput(JSON.stringify(result, null, 2));
+        const metricTags = [];
+        if (summary.totalTasks !== undefined) {
+            metricTags.push(`Tasks: ${summary.totalTasks}`);
+        }
+        if (summary.totalDuration !== undefined) {
+            metricTags.push(`Duration: ${(summary.totalDuration / 1000).toFixed(2)}s`);
         }
 
         resultItem.innerHTML = `
-            <div class="result-header">
-                <div class="result-title">执行结果</div>
-                <div class="result-time">${time}</div>
+            <div class="result-meta">
+                <span>${this.escapeHtml(sessionId)}</span>
+                <span>${new Date().toLocaleTimeString()}</span>
             </div>
-            <div class="result-content">${content}</div>
-            ${metrics}
+            <div class="result-content">${this.formatOutput(responseText)}</div>
+            ${metricTags.length > 0 ? `<div class="result-metrics">${metricTags.map((tag) => `<span class="metric-tag">${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
         `;
 
-        // 插入到最前面
         output.insertBefore(resultItem, output.firstChild);
     }
 
-    /**
-     * 格式化输出
-     */
+    formatTasksOutput(tasks) {
+        if (!Array.isArray(tasks) || tasks.length === 0) {
+            return '';
+        }
+
+        return tasks
+            .map((task) => {
+                const title = task.name || task.taskId || task.id || 'Task';
+                const body = task.result ? JSON.stringify(task.result, null, 2) : 'No detail';
+                return `## ${title}\n${body}`;
+            })
+            .join('\n\n');
+    }
+
     formatOutput(text) {
         if (typeof text !== 'string') {
             text = JSON.stringify(text, null, 2);
         }
 
-        // 转义HTML
-        text = text.replace(/&/g, '&amp;')
-                   .replace(/</g, '&lt;')
-                   .replace(/>/g, '&gt;');
-
-        // 格式化代码块
-        text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-        text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-        // 格式化标题
-        text = text.replace(/^### (.*$)/gm, '<h4>$1</h4>');
-        text = text.replace(/^## (.*$)/gm, '<h3>$1</h3>');
-
-        // 格式化列表
-        text = text.replace(/^- (.*$)/gm, '<li>$1</li>');
-        text = text.replace(/^(\d+)\. (.*$)/gm, '<li>$2</li>');
-
-        return text;
+        const escaped = this.escapeHtml(text);
+            
+        return escaped
+            .replace(/```[\w-]*\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
     }
 
-    /**
-     * 格式化任务输出
-     */
-    formatTasksOutput(tasks) {
-        if (!Array.isArray(tasks)) {
-            return this.formatOutput(JSON.stringify(tasks, null, 2));
-        }
-
-        let html = '<div style="display: grid; gap: 12px;">';
-
-        tasks.forEach(task => {
-            html += `
-                <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
-                    <div style="font-weight: 600; margin-bottom: 8px;">
-                        ${task.name || task.id}
-                    </div>
-                    ${task.result ? `
-                        <div style="font-size: 13px; color: #64748b;">
-                            ${this.formatOutput(typeof task.result === 'string'
-                                ? task.result
-                                : JSON.stringify(task.result, null, 2)
-                            ).substring(0, 200)}...
-                        </div>
-                    ` : ''}
-                    ${task.duration ? `
-                        <div style="font-size: 12px; color: #94a3b8; margin-top: 8px;">
-                            耗时: ${(task.duration / 1000).toFixed(2)}s
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        });
-
-        html += '</div>';
-        return html;
+    escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
-    /**
-     * 格式化指标
-     */
-    formatMetrics(summary) {
-        const metrics = [];
-
-        if (summary.totalTasks !== undefined) {
-            metrics.push({ label: '总任务数', value: summary.totalTasks });
-        }
-        if (summary.totalDuration !== undefined) {
-            metrics.push({
-                label: '总耗时',
-                value: `${(summary.totalDuration / 1000).toFixed(2)}s`
-            });
-        }
-        if (summary.successRate !== undefined) {
-            metrics.push({
-                label: '成功率',
-                value: `${(summary.successRate * 100).toFixed(1)}%`
-            });
-        }
-
-        if (metrics.length === 0) return '';
-
-        return `
-            <div class="result-metrics">
-                ${metrics.map(m => `
-                    <div class="metric-item">
-                        <span class="metric-label">${m.label}</span>
-                        <span class="metric-value">${m.value}</span>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }
-
-    /**
-     * 添加日志
-     */
     log(level, message) {
         const logs = document.getElementById('logs');
-        const time = new Date().toLocaleTimeString();
+        const row = document.createElement('div');
+        row.className = 'log-entry';
 
-        const entry = document.createElement('div');
-        entry.className = 'log-entry';
-        entry.innerHTML = `
-            <span class="log-time">[${time}]</span>
-            <span class="log-level ${level}">${level.toUpperCase()}</span>
-            <span class="log-message">${message}</span>
-        `;
+        const timeNode = document.createElement('span');
+        timeNode.className = 'log-time';
+        timeNode.textContent = `[${new Date().toLocaleTimeString()}]`;
 
-        logs.appendChild(entry);
+        const levelNode = document.createElement('span');
+        levelNode.className = `log-level ${level}`;
+        levelNode.textContent = level.toUpperCase();
 
-        // 自动滚动
+        const msgNode = document.createElement('span');
+        msgNode.className = 'log-message';
+        msgNode.textContent = message;
+
+        row.appendChild(timeNode);
+        row.appendChild(levelNode);
+        row.appendChild(msgNode);
+
+        logs.appendChild(row);
+
         if (document.getElementById('autoScroll').checked) {
             logs.scrollTop = logs.scrollHeight;
         }
     }
 
-    /**
-     * 更新任务计数
-     */
     updateTaskCount() {
         document.getElementById('runningTasks').textContent = this.taskCount.running;
         document.getElementById('completedTasks').textContent = this.taskCount.completed;
+        document.getElementById('failedTasks').textContent = this.taskCount.failed;
+        this.renderActiveRuntime();
     }
 
-    /**
-     * 设置连接状态
-     */
     setConnectionStatus(connected) {
         this.isConnected = connected;
 
@@ -415,30 +550,13 @@ class NACApp {
 
         if (connected) {
             dot.className = 'status-dot connected';
-            text.textContent = '已连接';
+            text.textContent = 'Connected';
         } else {
             dot.className = 'status-dot error';
-            text.textContent = '未连接';
+            text.textContent = 'Disconnected';
         }
     }
 
-    /**
-     * 显示加载中
-     */
-    showLoading() {
-        document.getElementById('loadingOverlay').classList.remove('hidden');
-    }
-
-    /**
-     * 隐藏加载中
-     */
-    hideLoading() {
-        document.getElementById('loadingOverlay').classList.add('hidden');
-    }
-
-    /**
-     * 显示Toast通知
-     */
     showToast(message, type = 'info') {
         const toast = document.getElementById('toast');
         toast.textContent = message;
@@ -446,47 +564,101 @@ class NACApp {
 
         setTimeout(() => {
             toast.classList.add('hidden');
-        }, 3000);
+        }, 2800);
     }
 
-    /**
-     * 清空输入
-     */
+    setLastRuntimeEvent(eventType, sessionId, payload = {}) {
+        const node = document.getElementById('lastRuntimeEvent');
+        if (!node) return;
+
+        const task = payload.taskName || payload.taskId || '-';
+        node.textContent = `[${new Date().toLocaleTimeString()}] ${eventType} | ${sessionId} | ${task}`;
+    }
+
+    scheduleSessionCompletionGuard(sessionId) {
+        this.clearSessionFinalizeTimer(sessionId);
+        const timer = setTimeout(() => {
+            if (!this.pendingRuns.has(sessionId)) {
+                return;
+            }
+            this.cleanupRun(sessionId);
+            if (this.taskCount.running > 0) {
+                this.taskCount.running -= 1;
+            }
+            this.taskCount.completed += 1;
+            this.updateTaskCount();
+            this.log('warn', `Session ${sessionId} completed without result payload. Marked as completed.`);
+        }, 2500);
+        this.sessionFinalizeTimers.set(sessionId, timer);
+    }
+
+    clearSessionFinalizeTimer(sessionId) {
+        const timer = this.sessionFinalizeTimers.get(sessionId);
+        if (timer) {
+            clearTimeout(timer);
+            this.sessionFinalizeTimers.delete(sessionId);
+        }
+    }
+
+    handleSessionFailed(sessionId) {
+        if (sessionId) {
+            this.cleanupRun(sessionId);
+            this.clearSessionFinalizeTimer(sessionId);
+            if (this.taskCount.running > 0) {
+                this.taskCount.running -= 1;
+            }
+            this.taskCount.failed += 1;
+            this.updateTaskCount();
+        }
+        this.log('error', `Session failed: ${sessionId}`);
+    }
+
+    startHeartbeat() {
+        this.stopHeartbeat();
+        this.pingTimer = setInterval(() => {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 20000);
+    }
+
+    stopHeartbeat() {
+        if (this.pingTimer) {
+            clearInterval(this.pingTimer);
+            this.pingTimer = null;
+        }
+    }
+
     clearInput() {
         document.getElementById('userInput').value = '';
     }
 
-    /**
-     * 清空输出
-     */
     clearOutput() {
-        const output = document.getElementById('output');
-        output.innerHTML = `
-            <div class="output-placeholder">
-                <div class="placeholder-icon">⚡</div>
-                <div class="placeholder-text">任务执行结果将显示在这里</div>
+        document.getElementById('output').innerHTML = `
+            <div class="empty-state">
+                <div class="empty-title">No result yet</div>
+                <div class="empty-text">Submit a task to see execution output.</div>
             </div>
         `;
     }
 
-    /**
-     * 导出输出
-     */
-    exportOutput() {
-        const output = document.getElementById('output');
-        const text = output.innerText;
+    clearLogs() {
+        document.getElementById('logs').innerHTML = '';
+    }
 
+    exportOutput() {
+        const text = document.getElementById('output').innerText;
         const blob = new Blob([text], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `nac-output-${Date.now()}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
 
-        this.showToast('输出已导出', 'success');
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `nac-output-${Date.now()}.txt`;
+        anchor.click();
+
+        URL.revokeObjectURL(url);
+        this.showToast('Output exported.', 'success');
     }
 }
 
-// 初始化应用
 const app = new NACApp();

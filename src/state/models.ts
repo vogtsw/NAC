@@ -21,6 +21,7 @@ export interface Task {
   requiredSkills: string[];
   dependencies: string[];
   estimatedDuration: number;
+  searchQuery?: string;
   status?: 'pending' | 'running' | 'completed' | 'failed';
   result?: any;
   error?: string;

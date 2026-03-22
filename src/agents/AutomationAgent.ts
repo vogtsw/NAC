@@ -74,7 +74,7 @@ export class AutomationAgent extends BaseAgent {
     const autoSteps = steps;
 
     // Handle web-search skill
-    if (task.requiredSkills?.includes('web-search')) {
+    if (task.requiredSkills?.includes('web-search') || this.looksLikeSearchTask(task)) {
       // Extract search query from task - prefer explicit searchQuery field, then extract from description
       let searchQuery: string;
 
@@ -85,10 +85,11 @@ export class AutomationAgent extends BaseAgent {
         // Fallback to extraction from task description
         searchQuery = this.extractSearchQuery(task);
       }
+      const desiredResultCount = this.extractDesiredResultCount(searchQuery, task);
 
       const result = await this.useSkill(
         'web-search',
-        { query: searchQuery, numResults: 5, language: 'zh-CN' },
+        { query: searchQuery, numResults: desiredResultCount, language: 'zh-CN' },
         {} as ExecutionContext
       );
 
@@ -166,6 +167,29 @@ export class AutomationAgent extends BaseAgent {
     }
 
     return query || task.description || task.name;
+  }
+
+  private extractDesiredResultCount(query: string, task: any): number {
+    const source = `${query || ''} ${task?.description || ''} ${task?.name || ''}`.toLowerCase();
+    const match = source.match(/(?:top\s*)?(\d{1,2})/i);
+
+    if (match) {
+      const value = parseInt(match[1], 10);
+      if (!Number.isNaN(value)) {
+        return Math.max(1, Math.min(20, value));
+      }
+    }
+
+    if (/热门|最火|top|trending|本周|latest|最新/i.test(source)) {
+      return 10;
+    }
+
+    return 5;
+  }
+
+  private looksLikeSearchTask(task: any): boolean {
+    const text = `${task?.name || ''} ${task?.description || ''} ${task?.searchQuery || ''}`.toLowerCase();
+    return /github|git hub|search|查找|搜索|热门|最火|trending|top/.test(text);
   }
 
   private async executeCommand(task: any): Promise<any> {

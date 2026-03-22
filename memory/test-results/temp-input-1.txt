@@ -1,1 +1,0 @@
-Create a Python Flask data analysis API with: /upload endpoint for CSV files, /analyze endpoint for statistical analysis, /visualize endpoint for charts using pandas and matplotlib, with error handling and logging.

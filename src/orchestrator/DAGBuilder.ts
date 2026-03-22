@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DAG Builder
  * Build task execution DAG from intent using LLM
  */
@@ -28,7 +28,6 @@ export class DAG {
   }
 
   markTaskComplete(taskId: string): void {
-    // Remove completed task and update dependencies
     this.nodes.forEach((node) => {
       node.dependencies = node.dependencies.filter((d) => d !== taskId);
     });
@@ -108,12 +107,18 @@ export class DAGBuilder {
   async build(intent: Intent): Promise<DAG> {
     logger.info({ intentType: intent.type, primaryGoal: intent.primaryGoal }, 'Building DAG');
 
-    const steps = await this.generateSteps(intent);
-
-    const dag = new DAG();
     const mappedSkills = this.mapCapabilitiesToSkills(intent.capabilities);
 
-    // 对于 automation + web-search 类型，从 primaryGoal 中提取搜索查询
+    // Deterministic path for search intents to avoid generic analysis drift.
+    if (intent.type === 'automation' && mappedSkills.includes('web-search')) {
+      const dag = this.buildSearchDag(intent);
+      logger.info({ taskCount: dag.getAllTasks().length }, 'DAG built successfully');
+      return dag;
+    }
+
+    const steps = await this.generateSteps(intent);
+    const dag = new DAG();
+
     let extractedSearchQuery: string | undefined;
     if (intent.type === 'automation' && mappedSkills.includes('web-search')) {
       extractedSearchQuery = this.extractSearchQueryFromGoal(intent.primaryGoal);
@@ -121,66 +126,77 @@ export class DAGBuilder {
     }
 
     steps.forEach((step: any, index: number) => {
-      // 对于 automation 类型的任务，从 intent.capabilities 映射技能
-      // 如果 LLM 生成的步骤包含技能，使用 LLM 的技能；否则使用映射的技能
       let requiredSkills: string[] = [];
 
       if (intent.type === 'automation') {
-        // 如果步骤有定义 required_skills 且不为空，使用步骤的技能
-        if (step.required_skills && step.required_skills.length > 0) {
+        if (Array.isArray(step.required_skills) && step.required_skills.length > 0) {
           requiredSkills = step.required_skills;
         } else if (mappedSkills.length > 0) {
-          // 否则使用从 intent.capabilities 映射的技能
           requiredSkills = mappedSkills;
+        }
+
+        if (mappedSkills.includes('web-search') && !requiredSkills.includes('web-search')) {
+          requiredSkills = [...requiredSkills, 'web-search'];
         }
       }
 
-      const taskData: any = {
+      const inferredAgentType = step.agent_type || this.inferAgentType(step);
+      const agentType = requiredSkills.includes('web-search') ? 'AutomationAgent' : inferredAgentType;
+
+      const taskData: Task = {
         id: step.id || `task-${index + 1}`,
-        name: step.name,
-        description: step.description,
-        agentType: step.agent_type || this.inferAgentType(step),
+        name: step.name || '执行任务',
+        description: step.description || intent.primaryGoal,
+        agentType,
         requiredSkills,
         dependencies: step.dependencies || [],
         estimatedDuration: step.estimated_duration || 300,
       };
 
-      // 如果有提取的搜索查询，添加到任务中
-      if (extractedSearchQuery) {
+      if (extractedSearchQuery && requiredSkills.includes('web-search')) {
         taskData.searchQuery = extractedSearchQuery;
       }
 
       dag.addTask(taskData);
     });
 
-    // Validate no cycles
     if (dag.hasCycle()) {
       throw new Error('Generated DAG contains circular dependencies');
     }
 
-    // Validate and fix DAG quality (remove placeholders, add missing descriptions)
     const validator = new DAGValidator();
     const validationResult = validator.validate(dag, intent.primaryGoal);
 
     if (!validationResult.isValid) {
-      logger.warn(
-        { issues: validationResult.issues },
-        'DAG validation found issues, applying fixes'
-      );
-
-      // 应用修复
+      logger.warn({ issues: validationResult.issues }, 'DAG validation found issues, applying fixes');
       const fixedDag = validator.applyFixes(dag, validationResult.fixes);
-
-      logger.info(
-        { fixedTasks: validationResult.fixes.size },
-        'DAG fixes applied'
-      );
-
+      logger.info({ fixedTasks: validationResult.fixes.size }, 'DAG fixes applied');
       logger.info({ taskCount: steps.length }, 'DAG built successfully');
       return fixedDag;
     }
 
     logger.info({ taskCount: steps.length }, 'DAG built successfully');
+    return dag;
+  }
+
+  private buildSearchDag(intent: Intent): DAG {
+    const dag = new DAG();
+    const searchQuery = this.extractSearchQueryFromGoal(intent.primaryGoal);
+
+    dag.addTask({
+      id: 'step_1',
+      name: /github|git hub/i.test(intent.primaryGoal || '')
+        ? '搜索并整理本周 GitHub 热门项目'
+        : '执行网络搜索并整理结果',
+      description: intent.primaryGoal,
+      agentType: 'AutomationAgent',
+      requiredSkills: ['web-search'],
+      dependencies: [],
+      estimatedDuration: 90,
+      searchQuery,
+    });
+
+    logger.info({ searchQuery }, 'Using deterministic search DAG');
     return dag;
   }
 
@@ -199,16 +215,13 @@ export class DAGBuilder {
           primaryGoal: intent.primaryGoal,
           capabilities: intent.capabilities.join(', '),
           complexity: intent.complexity,
-          availableSkills: [], // 不传递技能列表，让任务直接使用LLM
+          availableSkills: [],
         }),
         { responseFormat: 'json' }
       );
 
-      // 解析 JSON 并处理 Unicode 转义
       const parsed = JSON.parse(plan);
       const steps = parsed.steps || [];
-
-      // 修复中文字符编码问题
       return this.fixUnicodeInSteps(steps);
     } catch (error: any) {
       logger.warn({ error: error.message }, 'Failed to generate steps with LLM, using defaults');
@@ -216,54 +229,40 @@ export class DAGBuilder {
     }
   }
 
-  /**
-   * 修复步骤中的 Unicode 转义中文字符
-   * 将 \u4f60\u597d 转换为 你好
-   */
   private fixUnicodeInSteps(steps: any[]): any[] {
-    return steps.map(step => ({
+    return steps.map((step) => ({
       ...step,
       name: this.unescapeUnicode(step.name || ''),
       description: this.unescapeUnicode(step.description || ''),
     }));
   }
 
-  /**
-   * 解码 Unicode 转义字符
-   */
   private unescapeUnicode(text: string): string {
     if (!text) return text;
-    // 处理 \uXXXX 格式的 Unicode 转义
     return text.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
       String.fromCharCode(parseInt(hex, 16))
     );
   }
 
-  /**
-   * Infer agent type from step description
-   */
   private inferAgentType(step: any): string {
-    const description = step.description?.toLowerCase() || '';
+    const description = (step.description || '').toLowerCase();
 
-    if (description.includes('code') || description.includes('api') || description.includes('实现')) {
+    if (description.includes('code') || description.includes('api') || description.includes('implement')) {
       return 'CodeAgent';
     }
-    if (description.includes('data') || description.includes('分析') || description.includes('analyze')) {
+    if (description.includes('data') || description.includes('analyze')) {
       return 'DataAgent';
     }
-    if (description.includes('test') || description.includes('验证') || description.includes('review')) {
+    if (description.includes('test') || description.includes('verify') || description.includes('review')) {
       return 'AnalysisAgent';
     }
-    if (description.includes('自动') || description.includes('部署') || description.includes('deploy')) {
+    if (description.includes('automation') || description.includes('deploy')) {
       return 'AutomationAgent';
     }
 
     return 'GenericAgent';
   }
 
-  /**
-   * 将 intent capabilities 映射到实际的技能名称
-   */
   private mapCapabilitiesToSkills(capabilities: string[]): string[] {
     const skillMapping: Record<string, string> = {
       'web-search': 'web-search',
@@ -278,28 +277,27 @@ export class DAGBuilder {
 
     const skills: string[] = [];
     for (const cap of capabilities) {
-      const skill = skillMapping[cap.toLowerCase()];
-      if (skill) {
-        skills.push(skill);
-      }
+      const skill = skillMapping[String(cap).toLowerCase()];
+      if (skill) skills.push(skill);
     }
 
     logger.debug({ capabilities, skills }, 'Mapped capabilities to skills');
     return skills;
   }
 
-  /**
-   * 从 primaryGoal 中提取搜索查询
-   * primaryGoal 格式: "搜索关于 ${searchQuery} 的信息"
-   */
   private extractSearchQueryFromGoal(primaryGoal: string): string {
-    // 移除搜索相关的前缀
     const prefixes = [
-      '搜索关于', 'search for', 'search about', '查找',
-      'look for', '寻找', 'find'
+      '搜索关于',
+      '搜索',
+      '查找',
+      'search for',
+      'search about',
+      'search',
+      'find',
+      'look for',
     ];
 
-    let query = primaryGoal;
+    let query = primaryGoal || '';
     for (const prefix of prefixes) {
       if (query.toLowerCase().startsWith(prefix.toLowerCase())) {
         query = query.substring(prefix.length).trim();
@@ -307,10 +305,16 @@ export class DAGBuilder {
       }
     }
 
-    // 移除搜索相关的后缀
     const suffixes = [
-      ' 的信息', '的信息', ' 的新闻', ' 的最新消息', ' 的最新进展',
-      ' news', ' latest news', ' information', ' latest information'
+      ' 的信息',
+      '的信息',
+      ' 新闻',
+      ' 最新消息',
+      ' 最新进展',
+      ' news',
+      ' latest news',
+      ' information',
+      ' latest information',
     ];
 
     for (const suffix of suffixes) {
@@ -320,17 +324,9 @@ export class DAGBuilder {
       }
     }
 
-    // 如果提取后的查询为空或太短，返回原始 primaryGoal
-    if (!query || query.length < 2) {
-      return primaryGoal;
-    }
-
-    return query;
+    return !query || query.length < 2 ? primaryGoal : query;
   }
 
-  /**
-   * Get default steps when LLM is unavailable
-   */
   private getDefaultSteps(intent: Intent): any[] {
     return [
       {

@@ -31,6 +31,7 @@ export enum EventType {
  */
 export class EventBus extends EventEmitter {
   private blackboardSubscription: boolean = false;
+  private readonly sourceId: string = `eventbus-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 
   constructor() {
     super();
@@ -45,8 +46,12 @@ export class EventBus extends EventEmitter {
 
     const blackboard = getBlackboard();
     await blackboard.subscribe((event: string, data: any) => {
-      logger.debug({ event, data }, 'Received distributed event');
-      this.emit(event, data);
+      if (data && data.__eventBusSource === this.sourceId) {
+        return;
+      }
+      const { __eventBusSource: _ignored, ...payload } = data || {};
+      logger.debug({ event, data: payload }, 'Received distributed event');
+      this.emit(event, payload);
     });
 
     this.blackboardSubscription = true;
@@ -62,7 +67,10 @@ export class EventBus extends EventEmitter {
 
     // Also publish via blackboard for distributed scenarios
     const blackboard = getBlackboard();
-    await blackboard.publishEvent(eventType, data);
+    await blackboard.publishEvent(eventType, {
+      ...(data || {}),
+      __eventBusSource: this.sourceId,
+    });
 
     logger.debug({ event: eventType, data }, 'Event published');
   }

@@ -1,1 +1,0 @@
-Develop a user authentication REST API using TypeScript and Express with: user registration (POST /auth/register), user login (POST /auth/login), JWT auth middleware, bcrypt password hashing, input validation middleware, and unit tests.

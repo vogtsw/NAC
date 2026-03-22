@@ -8,7 +8,7 @@ import { Skill, SkillCategory, SkillContext, SkillResult } from '../types.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getSandboxManager } from '../../security/SandboxManager.js';
-import { getLogger } from '../../../src/monitoring/logger.js';
+import { getLogger } from '../../monitoring/logger.js';
 
 const execAsync = promisify(exec);
 const logger = getLogger('TerminalSkill');
@@ -31,6 +31,7 @@ export const TerminalSkill: Skill = {
 
   async execute(context: SkillContext, params: any): Promise<SkillResult> {
     const { command, cwd = process.cwd(), timeout = 30000, env = {}, bypassSandbox = false } = params;
+    let adjustedTimeout = timeout;
 
     try {
       // 🔒 SANDBOX SECURITY CHECK
@@ -85,7 +86,7 @@ export const TerminalSkill: Skill = {
 
         // Get resource limits
         const limits = sandbox.getResourceLimits();
-        const adjustedTimeout = Math.min(timeout, limits.maxExecutionTime);
+        adjustedTimeout = Math.min(timeout, limits.maxExecutionTime);
 
         logger.info({
           command,

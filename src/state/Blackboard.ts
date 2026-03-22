@@ -15,8 +15,11 @@ export interface TaskState {
   taskId: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   agentType?: string;
+  requiredSkills?: string[];
+  taskName?: string;
   result?: any;
   error?: string;
+  duration?: number;
   startedAt?: Date;
   completedAt?: Date;
 }
@@ -43,9 +46,9 @@ export interface SessionState {
  * Blackboard - Shared state management using Redis or in-memory
  */
 export class Blackboard {
-  private redis: Redis | null;
-  private publisher: Redis | null;
-  private subscriber: Redis | null;
+  private redis: Redis | null = null;
+  private publisher: Redis | null = null;
+  private subscriber: Redis | null = null;
   private memorySessions: Map<string, SessionState>;
   private memoryEvents: EventEmitter;
   private useMemory: boolean = false;
@@ -218,15 +221,17 @@ export class Blackboard {
   async updateTaskStatus(
     sessionId: string,
     taskId: string,
-    status: TaskState['status']
+    status: TaskState['status'],
+    metadata: Partial<TaskState> = {}
   ): Promise<void> {
     const state = await this.getState(sessionId);
     if (!state) return;
 
     if (!state.tasks.has(taskId)) {
-      state.tasks.set(taskId, { taskId, status });
+      state.tasks.set(taskId, { taskId, status, ...metadata });
     } else {
       const task = state.tasks.get(taskId)!;
+      Object.assign(task, metadata);
       task.status = status;
       if (status === 'running' && !task.startedAt) {
         task.startedAt = new Date();
@@ -237,13 +242,14 @@ export class Blackboard {
     }
 
     await this.saveState(state);
-    await this.publishEvent('task.updated', { sessionId, taskId, status });
+    await this.publishEvent('task.updated', { sessionId, taskId, status, ...metadata });
   }
 
   async recordTaskResult(
     sessionId: string,
     taskId: string,
-    result: any
+    result: any,
+    metadata: Partial<TaskState> = {}
   ): Promise<void> {
     const state = await this.getState(sessionId);
     if (!state) return;
@@ -253,10 +259,11 @@ export class Blackboard {
     if (state.tasks.has(taskId)) {
       const task = state.tasks.get(taskId)!;
       task.result = result;
+      Object.assign(task, metadata);
     }
 
     await this.saveState(state);
-    await this.publishEvent('task.completed', { sessionId, taskId, result });
+    await this.publishEvent('task.completed', { sessionId, taskId, result, ...metadata });
 
     logger.debug({ sessionId, taskId }, 'Task result recorded');
   }

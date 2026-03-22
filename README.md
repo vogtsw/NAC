@@ -178,8 +178,6 @@ You> 帮我生成一个RESTful API的用户认证模块
 
 | 报告 | 描述 |
 |------|------|
-| [memory/test-results/Final_Test_Report.md](memory/test-results/Final_Test_Report.md) | 最终测试报告 (97.6%通过率) |
-| [memory/test-results/E2E_Test_Solutions.md](memory/test-results/E2E_Test_Solutions.md) | E2E测试解决方案 |
 
 ### 架构文档
 
@@ -295,7 +293,6 @@ pnpm test:coverage
 
 ### 安全报告
 
-- [完整安全报告](SECURITY_AUDIT_SUMMARY.md)
 - [安全实施指南](doc/SECURITY_IMPLEMENTATION_GUIDE.md)
 
 ---

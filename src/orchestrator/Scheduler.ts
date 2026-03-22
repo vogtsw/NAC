@@ -1,26 +1,26 @@
-/**
+﻿/**
  * Scheduler
  * Parallel task execution scheduler with Lane Queues
  */
 
 import { DAG } from './DAGBuilder.js';
 import { AgentFactory } from '../agents/AgentFactory.js';
-import { getBlackboard } from '../state/Blackboard.js';
 import { getEventBus, EventType } from '../state/EventBus.js';
 import { Task } from '../state/models.js';
 import { getLogger } from '../monitoring/logger.js';
 import { getLaneQueueManager } from '../scheduler/LaneQueue.js';
 import { getRetryManager, RetryManager } from '../reliability/RetryManager.js';
-import { getIdempotencyManager } from '../reliability/IdempotencyManager.js';
+import { TaskExecutor } from './TaskExecutor.js';
+import { loadConfig } from '../config/index.js';
 
 const logger = getLogger('Scheduler');
 
 /**
- * 修复 Unicode 转义字符（用于显示中文）
+ * 淇 Unicode 杞箟瀛楃锛堢敤浜庢樉绀轰腑鏂囷級
  */
 export function fixUnicodeDisplay(text: string): string {
   if (!text) return text;
-  // 解码 Unicode 转义 \uXXXX
+  // 瑙ｇ爜 Unicode 杞箟 \uXXXX
   return text.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
     String.fromCharCode(parseInt(hex, 16))
   );
@@ -38,12 +38,25 @@ export class Scheduler {
   private runningTasks: Map<string, Promise<any>> = new Map();
   private laneQueueManager = getLaneQueueManager();
   private retryManager = getRetryManager();
-  private idempotencyManager = getIdempotencyManager();
+  private taskExecutor: TaskExecutor;
   private scheduleTimeout: number;
 
-  constructor(private maxParallelAgents: number = 10, scheduleTimeout: number = 90000) { // 默认 90 秒超时
-    this.scheduleTimeout = scheduleTimeout;
-    logger.info({ maxParallelAgents, scheduleTimeout }, 'Scheduler initialized with Lane Queues');
+  constructor(private maxParallelAgents: number = 10, scheduleTimeout?: number) {
+    const config = loadConfig();
+    const configuredTimeout =
+      config.cluster.taskTimeout || parseInt(process.env.TASK_TIMEOUT || '300000', 10);
+
+    this.taskExecutor = new TaskExecutor({
+      enableOutputValidation: process.env.ENABLE_OUTPUT_VALIDATION !== 'false',
+      enableReflexion: process.env.ENABLE_REFLEXION !== 'false',
+      minQualityScore: parseInt(process.env.MIN_OUTPUT_QUALITY_SCORE || '60', 10),
+      maxReflexionAttempts: parseInt(process.env.MAX_REFLEXION_ATTEMPTS || '2', 10),
+    });
+    this.scheduleTimeout = scheduleTimeout ?? configuredTimeout;
+    logger.info(
+      { maxParallelAgents, scheduleTimeout: this.scheduleTimeout },
+      'Scheduler initialized with Lane Queues'
+    );
   }
 
   /**
@@ -71,7 +84,7 @@ export class Scheduler {
 
     // Process tasks until all are complete (with timeout check)
     while (!dag.isComplete()) {
-      // 检查是否超时
+      // Check schedule timeout
       const elapsed = Date.now() - startTime;
       if (elapsed > this.scheduleTimeout) {
         throw new Error(`DAG execution timeout after ${elapsed}ms (limit: ${this.scheduleTimeout}ms)`);
@@ -90,7 +103,7 @@ export class Scheduler {
 
       // Get next tasks from lane queues
       const tasksToExecute: Task[] = [];
-      for (const task of readyTasks) {
+      for (const _task of readyTasks) {
         const { task: nextTask, lane } = this.laneQueueManager.getNextTask();
         if (nextTask && lane) {
           tasksToExecute.push(nextTask);
@@ -142,7 +155,7 @@ export class Scheduler {
     sessionId: string,
     context: SchedulerContext
   ): Promise<any> {
-    const retryPolicy = task.retryPolicy || this.retryManager.getDefaultPolicy('linear');
+    const retryPolicy = task.retryPolicy || RetryManager.getDefaultPolicy('linear');
 
     return this.retryManager.executeWithRetry(
       () => this.executeTask(task, sessionId, context),
@@ -160,7 +173,6 @@ export class Scheduler {
     context: SchedulerContext
   ): Promise<any> {
     const taskId = task.id;
-    const blackboard = getBlackboard();
     const eventBus = getEventBus();
 
     logger.info({ taskId, taskName: fixUnicodeDisplay(task.name) }, 'Starting task');
@@ -168,33 +180,34 @@ export class Scheduler {
     // Create execution promise and track it
     const executionPromise = (async () => {
       try {
-        // Update task status
-        await blackboard.updateTaskStatus(sessionId, taskId, 'running');
-        await eventBus.publish(EventType.TASK_UPDATED, { sessionId, taskId, status: 'running' });
-
-        // Create agent
-        const agent = await context.agentFactory.create(task.agentType, {
-          taskId,
-          skills: task.requiredSkills,
+        const execution = await this.taskExecutor.executeWithValidation(task, {
+          agentFactory: context.agentFactory,
+          sessionId,
+          userIntent: task.description || task.name,
         });
 
-        // Execute task
-        const startTime = Date.now();
-        const result = await agent.execute(task);
-        const duration = Date.now() - startTime;
+        logger.info(
+          {
+            taskId,
+            duration: execution.duration,
+            validationScore: execution.validationScore,
+            attempts: execution.attempts.length,
+          },
+          'Task completed'
+        );
 
-        // Record result
-        await blackboard.recordTaskResult(sessionId, taskId, result);
-        await eventBus.publish(EventType.TASK_COMPLETED, { sessionId, taskId, result, duration });
-
-        logger.info({ taskId, duration }, 'Task completed');
-
-        return { taskId, result, duration };
+        return { taskId, result: execution.result, duration: execution.duration };
       } catch (error: any) {
         logger.error({ taskId, error: error.message }, 'Task failed');
 
-        await blackboard.updateTaskStatus(sessionId, taskId, 'failed');
-        await eventBus.publish(EventType.TASK_FAILED, { sessionId, taskId, error: error.message });
+        await eventBus.publish(EventType.TASK_FAILED, {
+          sessionId,
+          taskId,
+          error: error.message,
+          agentType: task.agentType,
+          requiredSkills: task.requiredSkills || [],
+          taskName: task.name,
+        });
 
         throw error;
       } finally {
@@ -264,3 +277,4 @@ export class Scheduler {
     };
   }
 }
+
