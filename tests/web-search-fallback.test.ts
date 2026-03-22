@@ -20,5 +20,31 @@ describe('WebSearchSkill fallback', () => {
     expect(Array.isArray(result.result?.results)).toBe(true);
     expect(result.result?.results?.length).toBeGreaterThan(0);
   });
-});
 
+  it('extracts a direct URL through mirror fallback', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.startsWith('https://r.jina.ai/http://example.com')) {
+        return {
+          ok: true,
+          text: async () => '# Example\n\nThis is extracted markdown content from mirror.',
+        } as any;
+      }
+
+      throw new Error(`unexpected url: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock as any);
+
+    const result = await WebSearchSkill.execute(
+      { logger: console as any },
+      { query: 'https://example.com/article', numResults: 5 }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.result?.source).toBe('Web Page Extraction');
+    expect(result.result?.results?.[0]?.extractionProvider).toBe('r.jina.ai');
+    expect(result.result?.results?.[0]?.contentPreview).toContain('extracted markdown content');
+  });
+});
