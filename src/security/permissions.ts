@@ -179,14 +179,14 @@ export const PermissionGroups = {
  * Check if a permission belongs to a group
  */
 export function isInGroup(permission: Permission, group: keyof typeof PermissionGroups): boolean {
-  return PermissionGroups[group].includes(permission);
+  return (PermissionGroups[group] as readonly Permission[]).includes(permission);
 }
 
 /**
  * Get all permissions in a group
  */
 export function getGroupPermissions(group: keyof typeof PermissionGroups): Permission[] {
-  return [...PermissionGroups[group]];
+  return [...(PermissionGroups[group] as readonly Permission[])];
 }
 
 /**

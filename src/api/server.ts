@@ -18,6 +18,10 @@ import { getLogger } from '../monitoring/logger.js';
 const logger = getLogger('APIServer');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+type ApiRequest = any;
+type ApiReply = any;
+type FastifyPluginInstance = any;
+type WebsocketConnection = any;
 
 export interface APIServerConfig {
   host?: string;
@@ -30,7 +34,7 @@ export interface APIServerConfig {
 }
 
 export class APIServer {
-  private server: any;
+  private server: ReturnType<typeof fastify>;
   private orchestrator: any;
   private skillManager: any;
   private config: APIServerConfig;
@@ -77,7 +81,7 @@ export class APIServer {
     logger.info('API server: Routes registered');
 
     // Register error handler
-    this.server.setErrorHandler((error, request, reply) => {
+    this.server.setErrorHandler((error: any, _request: ApiRequest, reply: ApiReply) => {
       logger.error({ error }, 'Request error');
       reply.code(error.statusCode || 500).send({
         success: false,
@@ -107,12 +111,12 @@ export class APIServer {
       logger.info('Static file serving registered');
 
       // Serve index.html at root
-      this.server.get('/', async (request, reply) => {
+      this.server.get('/', async (_request: ApiRequest, reply: ApiReply) => {
         return reply.sendFile('index.html');
       });
 
       // Health check
-      this.server.get('/health', async (request, reply) => {
+      this.server.get('/health', async (_request: ApiRequest, reply: ApiReply) => {
         reply.send({
           status: 'ok',
           timestamp: new Date().toISOString(),
@@ -126,7 +130,7 @@ export class APIServer {
     }
 
     // Task routes
-    this.server.post('/api/v1/tasks/submit', async (request, reply) => {
+    this.server.post('/api/v1/tasks/submit', async (request: ApiRequest, reply: ApiReply) => {
       try {
         const { user_input, session_id, context } = request.body as any;
 
@@ -175,7 +179,7 @@ export class APIServer {
     });
 
     // Get task status
-    this.server.get('/api/v1/tasks/:taskId', async (request, reply) => {
+    this.server.get('/api/v1/tasks/:taskId', async (request: ApiRequest, reply: ApiReply) => {
       try {
         const { taskId } = request.params as { taskId: string };
         const blackboard = getBlackboard();
@@ -208,7 +212,7 @@ export class APIServer {
     });
 
     // Get session tasks
-    this.server.get('/api/v1/sessions/:sessionId/tasks', async (request, reply) => {
+    this.server.get('/api/v1/sessions/:sessionId/tasks', async (request: ApiRequest, reply: ApiReply) => {
       try {
         const { sessionId } = request.params as { sessionId: string };
         const blackboard = getBlackboard();
@@ -241,7 +245,7 @@ export class APIServer {
     });
 
     // Cancel task
-    this.server.delete('/api/v1/tasks/:taskId', async (request, reply) => {
+    this.server.delete('/api/v1/tasks/:taskId', async (request: ApiRequest, reply: ApiReply) => {
       try {
         const { taskId } = request.params as { taskId: string };
 
@@ -264,7 +268,7 @@ export class APIServer {
     });
 
     // Skills routes
-    this.server.get('/api/v1/skills', async (request, reply) => {
+    this.server.get('/api/v1/skills', async (_request: ApiRequest, reply: ApiReply) => {
       try {
         const skills = this.skillManager.listSkills();
         reply.send({
@@ -283,7 +287,7 @@ export class APIServer {
       }
     });
 
-    this.server.get('/api/v1/skills/:skillName', async (request, reply) => {
+    this.server.get('/api/v1/skills/:skillName', async (request: ApiRequest, reply: ApiReply) => {
       try {
         const { skillName } = request.params as { skillName: string };
         const skill = this.skillManager.getSkill(skillName);
@@ -310,7 +314,7 @@ export class APIServer {
     });
 
     // Agents routes
-    this.server.get('/api/v1/agents', async (request, reply) => {
+    this.server.get('/api/v1/agents', async (_request: ApiRequest, reply: ApiReply) => {
       try {
         const agents = await this.orchestrator.getActiveAgents();
         reply.send({
@@ -332,8 +336,8 @@ export class APIServer {
     // WebSocket route
     const orchestrator = this.orchestrator;
     const eventBus = getEventBus();
-    this.server.register(async function (fastify) {
-      fastify.get('/ws', { websocket: true }, (connection, req) => {
+    this.server.register(async function (fastify: FastifyPluginInstance) {
+      fastify.get('/ws', { websocket: true }, (connection: WebsocketConnection, _req: ApiRequest) => {
         const socket: any = (connection as any)?.socket ?? connection;
         if (!socket || typeof socket.on !== 'function' || typeof socket.send !== 'function') {
           logger.error({ connectionType: typeof connection }, 'Invalid websocket connection object');

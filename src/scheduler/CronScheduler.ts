@@ -66,7 +66,7 @@ export class CronScheduler {
 
     // Validate cron expression
     try {
-      cronParser.parseExpression(cronConfig.expression);
+      cronParser.parse(cronConfig.expression);
     } catch (error) {
       throw new Error(`Invalid cron expression: ${cronConfig.expression}`);
     }
@@ -160,7 +160,7 @@ export class CronScheduler {
    */
   private getNextRunTime(cronExpression: string, timezone = 'Asia/Shanghai'): Date {
     try {
-      const interval = cronParser.parseExpression(cronExpression, { tz: timezone });
+      const interval = cronParser.parse(cronExpression, { tz: timezone });
       const nextDate = interval.next();
       return nextDate.toDate();
     } catch (error) {

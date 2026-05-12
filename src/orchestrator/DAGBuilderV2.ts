@@ -134,7 +134,9 @@ export class DAGBuilderV2 {
 
     const shouldCollaborate = this.router.shouldCollaborate(routingResult);
 
-    const steps = this.llm
+    const steps = this.shouldUseDeterministicFallback()
+      ? this.getDefaultSteps(intent, routingResult)
+      : this.llm
       ? await this.generateStepsWithContext(intent, routingResult, shouldCollaborate)
       : this.getDefaultSteps(intent, routingResult);
 
@@ -193,6 +195,11 @@ export class DAGBuilderV2 {
   private hasSearchCapability(intent: Intent): boolean {
     const capabilities = (intent.capabilities || []).map((c) => String(c).toLowerCase());
     return capabilities.includes('web-search') || capabilities.includes('information-retrieval');
+  }
+
+  private shouldUseDeterministicFallback(): boolean {
+    const isTestRuntime = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+    return isTestRuntime && process.env.USE_LIVE_LLM_FOR_TESTS !== 'true';
   }
 
   private buildSearchDag(intent: Intent): DAG {

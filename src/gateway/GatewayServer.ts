@@ -35,6 +35,8 @@ export interface StreamChunk {
   phase?: 'start' | 'end';
   text?: string;
   clients?: number;
+  presenceVersion?: number;
+  healthVersion?: number;
   dropIfSlow?: boolean;
 }
 

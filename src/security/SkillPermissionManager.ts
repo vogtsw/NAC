@@ -64,7 +64,9 @@ export class SkillPermissionManager {
       skillId: 'terminal-exec',
       permissions: [Permission.SYSTEM_EXEC],
       resourceLimits: {
+        maxFileSize: 0,
         maxExecutionTime: 10000, // 10 seconds
+        allowedPaths: [process.cwd()],
       },
       audit: true, // Dangerous operations must be audited
     });
@@ -83,6 +85,7 @@ export class SkillPermissionManager {
       resourceLimits: {
         maxFileSize: 5 * 1024 * 1024, // 5MB
         maxExecutionTime: 60000, // 1 minute
+        allowedPaths: [process.cwd()],
       },
       audit: false,
     });

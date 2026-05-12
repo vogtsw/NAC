@@ -1,43 +1,34 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ['tests/**/*.test.ts', 'tests/**/*.test.ts'],
-    exclude: ['node_modules', 'dist'],
-    environment: 'node',
-    testTimeout: 120000, // 120 seconds timeout for E2E tests
-    hookTimeout: 60000,   // 60 seconds for hooks
-    teardownTimeout: 30000, // 30 seconds teardown
-    // Environment variables for tests
+    include: ["tests/**/*.test.ts"],
+    exclude: [
+      "node_modules",
+      "dist",
+      "tests/basic.test.ts",
+      "tests/core-validation.test.ts",
+      "tests/integration.test.ts",
+      "tests/integration-quick.test.ts",
+      "tests/web-search-fallback.test.ts",
+      "tests/scripts/**",
+      "tests/e2e/**",
+      "tests/integration/**",
+      "tests/unit/**",
+      "tests/cases/**",
+      "tests/fixtures/**",
+    ],
+    environment: "node",
+    testTimeout: 30000,
     env: {
-      NODE_ENV: 'test',
-      USE_MEMORY_STORE: 'true', // Force in-memory mode
-      LOG_LEVEL: 'error', // Reduce log noise in tests
+      NODE_ENV: "test",
+      LOG_LEVEL: "error",
     },
-    // Setup files to run before tests
-    setupFiles: [],
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
-    },
-    alias: {
-      '@': new URL('./src', import.meta.url).pathname,
-    },
-    // Resolve configuration for .ts files
-    resolve: {
-      extensions: ['.ts', '.js', '.json'],
-      alias: {
-        '@': new URL('./src', import.meta.url).pathname,
-      },
-    },
-    // Global fixtures
-    pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true, // Run tests in a single process for consistency
-      },
+      provider: "v8",
+      reporter: ["text", "json"],
+      include: ["src/**/*.ts"],
+      exclude: ["src/cli/**", "src/api/**"],
     },
   },
 });

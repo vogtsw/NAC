@@ -72,3 +72,37 @@ QUICKSTART.md
 SECURITY_AUDIT_SUMMARY.md
 SECURITY_RELIABILITY_GUIDE.md
 START_COMMIT_NOW.md
+
+# Security audit reports (generated, may contain sensitive findings)
+memory/Code_Audit_Report.md
+memory/AGENT_BENCHMARK_ANALYSIS.md
+FINAL_SECURITY_REPORT.txt
+FINAL_SUMMARY.txt
+SECURITY_IMPLEMENTATION_SUMMARY.txt
+
+# Eval / benchmark data (runtime generated, large test data)
+/eval/
+trajectories/
+test-trajectories/
+test-loop-tmp/
+02_competitor_benchmark/
+
+# Debug and one-off test scripts
+create-test.cjs
+create-test.js
+debug-parser.ts
+debug-scenarios.ts
+test-needle.cfg
+nul
+TODOS.md
+
+# Test prompt injection / red-teaming artifacts
+user-request.txt
+support-ticket.md
+setup-instructions.txt
+
+# Meeting minutes and temporary docs
+meeting-minutes-2025-03-17.md
+
+# Project scratchpad
+project/

@@ -2,7 +2,6 @@
  * Agent System Exports
  */
 
-import { LLMClient } from '../llm/index.js';
 import { BaseAgent } from './BaseAgent.js';
 import { GenericAgent } from './GenericAgent.js';
 import { CodeAgent } from './CodeAgent.js';
@@ -11,7 +10,7 @@ import { AutomationAgent } from './AutomationAgent.js';
 import { AnalysisAgent } from './AnalysisAgent.js';
 import { AgentFactory } from './AgentFactory.js';
 import { AgentConfig } from '../state/models.js';
-import { getLLMClient } from '../llm/index.js';
+import { getLLMClient } from '../llm/LLMClient.js';
 
 // Re-export classes
 export { BaseAgent, GenericAgent, CodeAgent, DataAgent, AutomationAgent, AnalysisAgent, AgentFactory };
@@ -34,9 +33,9 @@ function getFactory(): AgentFactory {
  */
 export async function getCodeAgent(config?: Partial<AgentConfig>): Promise<BaseAgent> {
   const fullConfig: AgentConfig = {
-    taskId: config?.taskId || `code-${Date.now()}`,
-    agentType: 'CodeAgent',
+    skills: [],
     ...config,
+    taskId: config?.taskId || `code-${Date.now()}`,
   };
   return getFactory().create('CodeAgent', fullConfig);
 }
@@ -46,9 +45,9 @@ export async function getCodeAgent(config?: Partial<AgentConfig>): Promise<BaseA
  */
 export async function getDataAgent(config?: Partial<AgentConfig>): Promise<BaseAgent> {
   const fullConfig: AgentConfig = {
-    taskId: config?.taskId || `data-${Date.now()}`,
-    agentType: 'DataAgent',
+    skills: [],
     ...config,
+    taskId: config?.taskId || `data-${Date.now()}`,
   };
   return getFactory().create('DataAgent', fullConfig);
 }
@@ -58,9 +57,9 @@ export async function getDataAgent(config?: Partial<AgentConfig>): Promise<BaseA
  */
 export async function getAutomationAgent(config?: Partial<AgentConfig>): Promise<BaseAgent> {
   const fullConfig: AgentConfig = {
-    taskId: config?.taskId || `automation-${Date.now()}`,
-    agentType: 'AutomationAgent',
+    skills: [],
     ...config,
+    taskId: config?.taskId || `automation-${Date.now()}`,
   };
   return getFactory().create('AutomationAgent', fullConfig);
 }
@@ -70,9 +69,9 @@ export async function getAutomationAgent(config?: Partial<AgentConfig>): Promise
  */
 export async function getAnalysisAgent(config?: Partial<AgentConfig>): Promise<BaseAgent> {
   const fullConfig: AgentConfig = {
-    taskId: config?.taskId || `analysis-${Date.now()}`,
-    agentType: 'AnalysisAgent',
+    skills: [],
     ...config,
+    taskId: config?.taskId || `analysis-${Date.now()}`,
   };
   return getFactory().create('AnalysisAgent', fullConfig);
 }
@@ -82,9 +81,9 @@ export async function getAnalysisAgent(config?: Partial<AgentConfig>): Promise<B
  */
 export async function getGenericAgent(config?: Partial<AgentConfig>): Promise<BaseAgent> {
   const fullConfig: AgentConfig = {
-    taskId: config?.taskId || `generic-${Date.now()}`,
-    agentType: 'GenericAgent',
+    skills: [],
     ...config,
+    taskId: config?.taskId || `generic-${Date.now()}`,
   };
   return getFactory().create('GenericAgent', fullConfig);
 }

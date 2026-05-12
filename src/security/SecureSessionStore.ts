@@ -6,7 +6,8 @@
 
 import { SessionStore, SessionMessage } from '../state/SessionStore.js';
 import { getSensitiveDataFilter, DetectionResult, RiskLevel } from './SensitiveDataFilter.js';
-import { createHash, randomBytes, createCipheriv, createDecipheriv, scryptSync } from 'crypto';
+import { createHash, randomBytes, createCipheriv, createDecipheriv, scryptSync, timingSafeEqual } from 'crypto';
+import type { CipherGCM, DecipherGCM } from 'crypto';
 import { getLogger } from '../monitoring/logger.js';
 import { promises as fs } from 'fs';
 
@@ -222,7 +223,7 @@ export class SecureSessionStore extends SessionStore {
       const key = scryptSync(this.encryptionKey, salt, this.encryptionConfig.keyLength);
 
       // Create cipher
-      const cipher = createCipheriv(this.encryptionConfig.algorithm, key, iv);
+      const cipher = createCipheriv(this.encryptionConfig.algorithm, key, iv) as CipherGCM;
 
       // Encrypt content
       const encrypted = Buffer.concat([
@@ -271,7 +272,7 @@ export class SecureSessionStore extends SessionStore {
       const key = scryptSync(this.encryptionKey, salt, this.encryptionConfig.keyLength);
 
       // Create decipher
-      const decipher = createDecipheriv(this.encryptionConfig.algorithm, key, iv);
+      const decipher = createDecipheriv(this.encryptionConfig.algorithm, key, iv) as DecipherGCM;
       decipher.setAuthTag(authTag);
 
       // Decrypt content
@@ -316,8 +317,7 @@ export class SecureSessionStore extends SessionStore {
     const bBuffer = Buffer.from(b);
 
     try {
-      // @ts-ignore - timingSafeEqual exists in Node.js
-      return require('crypto').timingSafeEqual(aBuffer, bBuffer);
+      return timingSafeEqual(aBuffer, bBuffer);
     } catch {
       // Fallback for older Node.js versions
       let result = 0;

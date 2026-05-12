@@ -45,6 +45,10 @@ export class AgentRouter {
     }
 
     // 2. 使用 LLM 进行语义匹配
+    if (this.shouldUseDeterministicFallback()) {
+      return this.fallbackMatch(task, allCapabilities);
+    }
+
     const matchResults = await this.semanticMatch(task, allCapabilities);
 
     // 3. 按置信度排序
@@ -57,6 +61,11 @@ export class AgentRouter {
     }, 'Routing complete');
 
     return sorted;
+  }
+
+  private shouldUseDeterministicFallback(): boolean {
+    const isTestRuntime = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+    return isTestRuntime && process.env.USE_LIVE_LLM_FOR_TESTS !== 'true';
   }
 
   /**

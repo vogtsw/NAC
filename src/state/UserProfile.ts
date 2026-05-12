@@ -42,6 +42,7 @@ export class UserProfile {
   constructor(userId: string) {
     this.userId = userId;
     this.store = getUserStore();
+    this.data = this.createDefaultProfile();
   }
 
   /**

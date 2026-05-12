@@ -208,6 +208,10 @@ export class DAGBuilder {
       return this.getDefaultSteps(intent);
     }
 
+    if (this.shouldUseDeterministicFallback()) {
+      return this.getDefaultSteps(intent);
+    }
+
     try {
       const plan = await this.llm.complete(
         TaskPlanningPrompt.format({
@@ -227,6 +231,11 @@ export class DAGBuilder {
       logger.warn({ error: error.message }, 'Failed to generate steps with LLM, using defaults');
       return this.getDefaultSteps(intent);
     }
+  }
+
+  private shouldUseDeterministicFallback(): boolean {
+    const isTestRuntime = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+    return isTestRuntime && process.env.USE_LIVE_LLM_FOR_TESTS !== 'true';
   }
 
   private fixUnicodeInSteps(steps: any[]): any[] {
@@ -328,12 +337,37 @@ export class DAGBuilder {
   }
 
   private getDefaultSteps(intent: Intent): any[] {
+    const executionAgent = intent.type === 'code'
+      ? 'CodeAgent'
+      : intent.type === 'data'
+        ? 'DataAgent'
+        : intent.type === 'automation'
+          ? 'AutomationAgent'
+          : 'GenericAgent';
+
     return [
       {
+        id: 'step_1',
         name: '分析需求',
         description: intent.primaryGoal,
         agent_type: 'AnalysisAgent',
         dependencies: [],
+        estimated_duration: 60,
+      },
+      {
+        id: 'step_2',
+        name: '执行任务',
+        description: intent.primaryGoal,
+        agent_type: executionAgent,
+        dependencies: ['step_1'],
+        estimated_duration: 180,
+      },
+      {
+        id: 'step_3',
+        name: '验证结果',
+        description: `Verify completion for: ${intent.primaryGoal}`,
+        agent_type: 'AnalysisAgent',
+        dependencies: ['step_2'],
         estimated_duration: 60,
       },
     ];

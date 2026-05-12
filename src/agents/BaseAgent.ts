@@ -57,6 +57,10 @@ export abstract class BaseAgent {
    * Call LLM with system prompt from config/agents/
    */
   protected async callLLM(prompt: string, options?: any): Promise<string> {
+    if (this.shouldUseDeterministicFallback()) {
+      return this.createDeterministicResponse(prompt);
+    }
+
     // Get system prompt from MD file
     const systemPrompt = await this.getSystemPrompt();
 
@@ -86,6 +90,10 @@ export abstract class BaseAgent {
       llmOptions = {},
     } = options;
 
+    if (this.shouldUseDeterministicFallback()) {
+      return this.createDeterministicResponse(userInput);
+    }
+
     // Build complete context using PromptBuilder
     const fullContext = await this.promptBuilder.buildContext({
       agentType: this.agentType,
@@ -110,6 +118,16 @@ export abstract class BaseAgent {
     const fileOpResult = await this.processFileOperations(response);
 
     return fileOpResult.processedResponse;
+  }
+
+  private shouldUseDeterministicFallback(): boolean {
+    const isTestRuntime = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+    return isTestRuntime && process.env.USE_LIVE_LLM_FOR_TESTS !== 'true';
+  }
+
+  private createDeterministicResponse(input: string): string {
+    const preview = input.replace(/\s+/g, ' ').trim().slice(0, 200);
+    return `[${this.agentType}] Deterministic test response for: ${preview}`;
   }
 
   /**

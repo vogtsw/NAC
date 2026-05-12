@@ -176,7 +176,7 @@ export class RetryManager {
     attempt: number,
     baseDelay: number = 1000
   ): number {
-    const backoffFn = this.BACKOFF_STRATEGIES[strategy];
+    const backoffFn = RetryManager.BACKOFF_STRATEGIES[strategy];
     return backoffFn(attempt, baseDelay);
   }
 

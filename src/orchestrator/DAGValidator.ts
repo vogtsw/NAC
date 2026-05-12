@@ -7,7 +7,8 @@
  * 3. 技能配置是否正确
  */
 
-import { Task, DAG } from './DAGBuilder.js';
+import { DAG } from './DAGBuilder.js';
+import type { Task } from '../state/models.js';
 import { getLogger } from '../monitoring/logger.js';
 
 const logger = getLogger('DAGValidator');

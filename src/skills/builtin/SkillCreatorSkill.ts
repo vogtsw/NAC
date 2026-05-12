@@ -115,7 +115,7 @@ export const SkillCreatorSkill: Skill = {
       const skillNameKebab = skillName.toLowerCase().replace(/\s+/g, '-');
       const skillNamePascal = skillName
         .split(/[-\s]+/)
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join('');
       const skillNameCamel = skillName.charAt(0).toLowerCase() + skillNamePascal.slice(1);
 
@@ -213,10 +213,10 @@ ${description}
 ## 参数
 
 ### 必需参数
-${parameters.required.length > 0 ? parameters.required.map(p => `- \`${p}\``).join('\n') : '无'}
+${parameters.required.length > 0 ? parameters.required.map((p: string) => `- \`${p}\``).join('\n') : '无'}
 
 ### 可选参数
-${parameters.optional.length > 0 ? parameters.optional.map(p => `- \`${p}\``).join('\n') : '无'}
+${parameters.optional.length > 0 ? parameters.optional.map((p: string) => `- \`${p}\``).join('\n') : '无'}
 
 ## 使用示例
 
@@ -228,7 +228,7 @@ const skill = skillManager.getSkill('${skillNameKebab}');
 const result = await skill.execute(
   { logger: console },
   {
-    ${parameters.required.map(p => `${p}: value`).join(',\n    ')}
+    ${parameters.required.map((p: string) => `${p}: value`).join(',\n    ')}
   }
 );
 \`\`\`

@@ -13,6 +13,7 @@ export enum SkillCategory {
   DATA = 'data',
   AUTOMATION = 'automation',
   ANALYSIS = 'analysis',
+  DOCUMENT = 'document',
   FILE = 'file',
   TERMINAL = 'terminal',
   BROWSER = 'browser',
@@ -64,7 +65,10 @@ export interface SkillResult {
   success: boolean;
   result?: any;
   error?: string;
+  warning?: string;
   metadata?: Record<string, any>;
+  requiresApproval?: boolean;
+  requiresConfirmation?: boolean;
 }
 
 /**

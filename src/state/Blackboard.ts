@@ -57,8 +57,11 @@ export class Blackboard {
     this.memorySessions = new Map();
     this.memoryEvents = new EventEmitter();
 
-    // Check if we should force memory mode (for tests)
-    const forceMemory = process.env.USE_MEMORY_STORE === 'true';
+    // Regression tests must not depend on a local Redis daemon.
+    const isTestRuntime = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+    const forceMemory =
+      process.env.USE_MEMORY_STORE === 'true' ||
+      (process.env.USE_MEMORY_STORE !== 'false' && isTestRuntime);
 
     if (forceMemory) {
       this.useMemory = true;
@@ -462,7 +465,7 @@ export class Blackboard {
     };
   }
 
-  private async publishEvent(event: string, data: any): Promise<void> {
+  async publishEvent(event: string, data: any): Promise<void> {
     if (this.useMemory) {
       this.memoryEvents.emit('event', { event, data });
       return;
