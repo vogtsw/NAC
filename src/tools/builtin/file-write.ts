@@ -24,7 +24,7 @@ export class FileWriteTool extends Tool {
       description: "Content to write to the file",
     },
   ];
-  readonly requiresApproval = true;
+  readonly metadata = { category: "write" as const, touchesPaths: true, safeForParallel: false, requiresApproval: true, sideEffects: "Creates or overwrites files" };
 
   async execute(
     args: Record<string, unknown>,

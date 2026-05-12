@@ -149,7 +149,7 @@ export class BashTool extends Tool {
       required: false,
     },
   ];
-  readonly requiresApproval = true;
+  readonly metadata = { category: "shell" as const, touchesPaths: false, safeForParallel: false, requiresApproval: true, sideEffects: "Executes shell commands" };
 
   async execute(
     args: Record<string, unknown>,

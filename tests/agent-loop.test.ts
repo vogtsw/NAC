@@ -131,33 +131,14 @@ describe("AgentLoop", () => {
   });
 
   it("detects tool loop and stops", async () => {
-    // Returns the same tool call 4 times
-    const toolResponses = [
-      {
-        content: "Trying...",
-        toolCalls: [
-          { id: "1", name: "file_read", arguments: { filePath: "same.txt" } },
-        ],
-      },
-      {
-        content: "Trying again...",
-        toolCalls: [
-          { id: "2", name: "file_read", arguments: { filePath: "same.txt" } },
-        ],
-      },
-      {
-        content: "One more try...",
-        toolCalls: [
-          { id: "3", name: "file_read", arguments: { filePath: "same.txt" } },
-        ],
-      },
-      {
-        content: "Still trying...",
-        toolCalls: [
-          { id: "4", name: "file_read", arguments: { filePath: "same.txt" } },
-        ],
-      },
-    ];
+    // Return the same tool call repeatedly — first detection injects reflection,
+    // second detection actually stops. Need 8 calls for double detection.
+    const toolResponses = Array.from({ length: 8 }, (_, i) => ({
+      content: `Try ${i + 1}...`,
+      toolCalls: [
+        { id: `${i}`, name: "file_read", arguments: { filePath: "same.txt" } },
+      ],
+    }));
 
     const mockLLM = new MockLLMAdapter(toolResponses);
     const loop = new AgentLoop({
@@ -240,6 +221,7 @@ describe("AgentLoop", () => {
       name = "custom_tool";
       description = "A custom tool";
       parameters = [{ name: "input", type: "string", description: "Input" }];
+      metadata = { category: "read" as const, touchesPaths: false, safeForParallel: true, requiresApproval: false };
       async execute(args: Record<string, unknown>, _ctx: ToolExecutionContext): Promise<ToolResult> {
         return { toolCallId: "", name: "custom_tool", result: "OK", isError: false, duration: 0 };
       }

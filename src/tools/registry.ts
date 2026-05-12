@@ -61,8 +61,8 @@ export class ToolRegistry {
       name: t.name,
       description: t.description,
       parameters: t.parameters,
-      safeForParallel: t.safeForParallel,
-      requiresApproval: t.requiresApproval,
+      safeForParallel: t.metadata.safeForParallel,
+      requiresApproval: t.metadata.requiresApproval,
       jsonSchema: t.toJSONSchema(),
     }));
   }
@@ -79,7 +79,7 @@ export class ToolRegistry {
    */
   getParallelSafeTools(): string[] {
     return this.getAll()
-      .filter((t) => t.safeForParallel)
+      .filter((t) => t.metadata.safeForParallel)
       .map((t) => t.name);
   }
 
@@ -88,7 +88,7 @@ export class ToolRegistry {
    */
   getApprovalRequiredTools(): string[] {
     return this.getAll()
-      .filter((t) => t.requiresApproval)
+      .filter((t) => t.metadata.requiresApproval)
       .map((t) => t.name);
   }
 

@@ -37,7 +37,7 @@ export class FileEditTool extends Tool {
       required: false,
     },
   ];
-  readonly requiresApproval = true;
+  readonly metadata = { category: "write" as const, touchesPaths: true, safeForParallel: false, requiresApproval: true, sideEffects: "Modifies existing files" };
 
   async execute(
     args: Record<string, unknown>,

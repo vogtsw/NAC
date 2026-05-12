@@ -34,6 +34,7 @@ export interface Task {
   retryPolicy?: RetryPolicy;   // Custom retry policy
   maxRetries?: number;         // Maximum retry attempts
   retryCount?: number;         // Current retry attempt
+  contract?: TaskContract;     // Engineering contract for DAG execution
 }
 
 export interface DAGNode {
@@ -150,6 +151,31 @@ export interface RetryPolicy {
 /**
  * Task Lane Configuration for Priority Queues
  */
+/**
+ * TaskContract — engineering contract for DAG tasks.
+ * Each sub-agent task must specify what it needs and what it should produce.
+ */
+export interface TaskContract {
+  objective: string;
+  inputs: string[];
+  expectedArtifacts: string[];
+  acceptanceCriteria: string[];
+  allowedTools: string[];
+  maxIterations: number;
+}
+
+/**
+ * TaskResult — structured result from a DAG task execution.
+ * The DAG scheduler uses this to decide: complete, retry, or re-plan.
+ */
+export interface TaskResult {
+  status: "success" | "partial" | "failed";
+  summary: string;
+  artifacts: string[];
+  evidence: string[];
+  nextActions: string[];
+}
+
 export interface TaskLane {
   priority: number;        // 0-10, 0 highest
   maxConcurrency: number;  // Maximum concurrent tasks in this lane

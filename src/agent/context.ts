@@ -78,8 +78,14 @@ export class ContextBuilder {
       messages.push({ role: msg.role, content });
     }
 
-    // Add current user request
-    messages.push({ role: "user", content: userRequest });
+    // Add current user request only if not already the last message
+    const lastMsg = recentHistory[recentHistory.length - 1];
+    const lastContent = lastMsg
+      ? (typeof lastMsg.content === "string" ? lastMsg.content : extractContextText(lastMsg.content))
+      : "";
+    if (lastMsg?.role !== "user" || lastContent !== userRequest) {
+      messages.push({ role: "user", content: userRequest });
+    }
 
     return { messages, cacheBreakpoint };
   }
@@ -170,6 +176,11 @@ export class ContextBuilder {
   }
 
   private flattenContent(content: any): string {
+    return extractContextText(content);
+  }
+}
+
+function extractContextText(content: any): string {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       return content
@@ -182,7 +193,6 @@ export class ContextBuilder {
         .join("\n");
     }
     return String(content);
-  }
 }
 
 /**

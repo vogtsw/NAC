@@ -32,7 +32,7 @@ export class GrepTool extends Tool {
       required: false,
     },
   ];
-  readonly safeForParallel = true;
+  readonly metadata = { category: "read" as const, touchesPaths: false, safeForParallel: true, requiresApproval: false };
 
   async execute(
     args: Record<string, unknown>,

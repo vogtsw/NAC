@@ -31,7 +31,7 @@ export class FileReadTool extends Tool {
       required: false,
     },
   ];
-  readonly safeForParallel = true;
+  readonly metadata = { category: "read" as const, touchesPaths: true, safeForParallel: true, requiresApproval: false };
 
   async execute(
     args: Record<string, unknown>,

@@ -11,6 +11,7 @@ export class TaskCompleteTool extends Tool {
     "Call this tool when you have completed the user's task. " +
     "Provide a summary of what was done and any relevant results. " +
     "This signals to the harness that the agent loop should stop.";
+  readonly metadata = { category: "read" as const, touchesPaths: false, safeForParallel: false, requiresApproval: false };
   readonly parameters = [
     {
       name: "summary",

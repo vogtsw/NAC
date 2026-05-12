@@ -26,7 +26,7 @@ export class DelegateTool extends Tool {
       description: "The specific sub-task to delegate",
     },
   ];
-  readonly safeForParallel = true; // sub-agents can run in parallel
+  readonly metadata = { category: "network" as const, touchesPaths: false, safeForParallel: true, requiresApproval: false };
 
   async execute(
     args: Record<string, unknown>,
