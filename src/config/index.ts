@@ -14,6 +14,10 @@ export interface LLMConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** DeepSeek V4: default thinking mode */
+  thinking?: 'enabled' | 'disabled';
+  /** DeepSeek V4: default reasoning effort */
+  reasoningEffort?: 'high' | 'max';
 }
 
 export interface ClusterConfig {
@@ -89,9 +93,11 @@ export function getConfig(): Config {
       llmConfig = {
         apiKey: process.env.DEEPSEEK_API_KEY || '',
         baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro',
         temperature: 0.7,
-        maxTokens: 2000,
+        maxTokens: 4096,
+        thinking: (process.env.DEEPSEEK_THINKING as 'enabled' | 'disabled') || 'enabled',
+        reasoningEffort: (process.env.DEEPSEEK_REASONING_EFFORT as 'high' | 'max') || 'high',
       };
       break;
 

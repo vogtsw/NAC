@@ -1,12 +1,14 @@
 /**
  * LLM Client
- * Abstract LLM provider interface supporting multiple APIs
+ * Abstract LLM provider interface supporting multiple APIs.
+ * Extended with DeepSeek V4 thinking/reasoning_effort support.
  */
 
 import OpenAI from 'openai';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../monitoring/logger.js';
 import { scanForSensitiveData } from '../security/SensitiveDataFilter.js';
+import type { DeepSeekModelPolicy, DeepSeekTokenUsage } from './DeepSeekModelPolicy.js';
 
 const logger = getLogger('LLMClient');
 
@@ -23,6 +25,20 @@ export interface CompleteOptions {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: 'text' | 'json';
+  /** DeepSeek V4: enable/disable thinking mode */
+  thinking?: 'enabled' | 'disabled';
+  /** DeepSeek V4: reasoning effort level */
+  reasoningEffort?: 'high' | 'max';
+  /** Extra body params for provider-specific extensions */
+  extraBody?: Record<string, unknown>;
+}
+
+export interface CompleteResult {
+  content: string;
+  reasoningContent?: string;
+  usage: DeepSeekTokenUsage;
+  finishReason: string;
+  model: string;
 }
 
 export interface ChatMessage {
@@ -50,9 +66,16 @@ export class LLMClient {
   }
 
   /**
-   * Complete text generation
+   * Complete text generation with full DeepSeek V4 support.
    */
   async complete(prompt: string, options: CompleteOptions = {}): Promise<string> {
+    return (await this.completeWithMeta(prompt, options)).content;
+  }
+
+  /**
+   * Complete with metadata (reasoning, usage, model info).
+   */
+  async completeWithMeta(prompt: string, options: CompleteOptions = {}): Promise<CompleteResult> {
     // SECURITY CHECK: Scan for sensitive data before sending to external API
     const scanResult = scanForSensitiveData(prompt);
 
@@ -78,11 +101,7 @@ export class LLMClient {
         detectionCount: scanResult.detections.length,
         types: scanResult.detections.map(d => d.type)
       }, 'Content contains sensitive data, sanitizing');
-
-      // Use sanitized version
       prompt = scanResult.sanitizedContent || prompt;
-
-      // Add warning about sanitization
       logger.info('⚠️ 敏感信息已被自动脱敏处理');
     }
 
@@ -94,20 +113,46 @@ export class LLMClient {
     messages.push({ role: 'user', content: prompt });
 
     try {
-      logger.debug({ model: this.model, promptLength: prompt.length }, 'Sending completion request');
+      logger.debug({ model: this.model, promptLength: prompt.length,
+        thinking: options.thinking, reasoningEffort: options.reasoningEffort }, 'Sending completion request');
 
-      const response = await this.client.chat.completions.create({
+      const body: Record<string, unknown> = {
         model: this.model,
         messages: messages as any,
         temperature: options.temperature ?? 0.7,
         max_tokens: options.maxTokens ?? 2000,
-        response_format: options.responseFormat === 'json' ? { type: 'json_object' } : undefined,
-      });
+      };
+
+      if (options.responseFormat === 'json') {
+        body.response_format = { type: 'json_object' };
+      }
+
+      // DeepSeek V4 thinking/reasoning support
+      if (options.thinking && this.model.startsWith('deepseek')) {
+        (body as any).thinking = { type: options.thinking };
+      }
+
+      if (options.reasoningEffort && this.model.startsWith('deepseek')) {
+        (body as any).reasoning_effort = options.reasoningEffort;
+      }
+
+      // Extra body params for provider-specific extensions
+      if (options.extraBody) {
+        Object.assign(body, options.extraBody);
+      }
+
+      const response = await this.client.chat.completions.create(body as any);
 
       const content = this.extractContent(response);
-      logger.debug({ responseLength: content.length }, 'Received completion response');
+      const reasoningContent = this.extractReasoningContent(response);
+      const usage = this.extractUsage(response);
+      const finishReason = this.extractFinishReason(response);
+      const model = this.extractModel(response);
 
-      return content;
+      logger.debug({ responseLength: content.length, reasoningLength: reasoningContent?.length || 0,
+        usage }, 'Received completion response');
+
+      return { content, reasoningContent, usage, finishReason, model };
     } catch (error: any) {
       logger.error({ error: error.message }, 'LLM API error');
       throw new Error(`LLM API error: ${error.message}`);
@@ -115,7 +160,7 @@ export class LLMClient {
   }
 
   /**
-   * Stream completion (async generator)
+   * Stream completion with DeepSeek V4 support.
    */
   async *streamComplete(prompt: string, options: CompleteOptions = {}): AsyncGenerator<string> {
     // SECURITY CHECK: Scan for sensitive data before sending to external API
@@ -149,13 +194,21 @@ export class LLMClient {
     messages.push({ role: 'user', content: prompt });
 
     try {
-      const stream = await this.client.chat.completions.create({
+      const body: Record<string, unknown> = {
         model: this.model,
         messages: messages as any,
         stream: true,
         temperature: options.temperature ?? 0.7,
         max_tokens: options.maxTokens ?? 2000,
-      });
+        stream_options: { include_usage: true },
+      };
+
+      if (options.thinking && this.model.startsWith('deepseek')) {
+        (body as any).extra_body = (body as any).extra_body || {};
+        (body as any).thinking = { type: options.thinking };
+      }
+
+      const stream = await this.client.chat.completions.create(body as any) as any;
 
       for await (const chunk of stream) {
         const content = this.extractStreamingContent(chunk);
@@ -170,18 +223,18 @@ export class LLMClient {
   }
 
   /**
-   * Complete with JSON response
+   * Complete with JSON response (preserves reasoning metadata).
    */
   async completeJSON<T = any>(prompt: string, options: CompleteOptions = {}): Promise<T> {
-    const response = await this.complete(prompt, {
+    const result = await this.completeWithMeta(prompt, {
       ...options,
       responseFormat: 'json',
     });
 
     try {
-      return JSON.parse(response) as T;
+      return JSON.parse(result.content) as T;
     } catch (error: any) {
-      logger.error({ response, error: error.message }, 'Failed to parse JSON response');
+      logger.error({ response: result.content.substring(0, 200), error: error.message }, 'Failed to parse JSON response');
       throw new Error(`Invalid JSON response: ${error.message}`);
     }
   }
@@ -197,6 +250,42 @@ export class LLMClient {
       return response.output.text;
     }
     throw new Error('Unexpected response format');
+  }
+
+  /**
+   * Extract reasoning_content from DeepSeek response.
+   */
+  private extractReasoningContent(response: any): string | undefined {
+    return response.choices?.[0]?.message?.reasoning_content || undefined;
+  }
+
+  /**
+   * Extract token usage with DeepSeek cache fields.
+   */
+  private extractUsage(response: any): DeepSeekTokenUsage {
+    const usage = response.usage || {};
+    return {
+      promptTokens: usage.prompt_tokens || 0,
+      completionTokens: usage.completion_tokens || 0,
+      totalTokens: usage.total_tokens || 0,
+      reasoningTokens: usage.completion_tokens_details?.reasoning_tokens || 0,
+      cacheHitTokens: usage.prompt_tokens_details?.cached_tokens || 0,
+      cacheMissTokens: Math.max(0, (usage.prompt_tokens || 0) - (usage.prompt_tokens_details?.cached_tokens || 0)),
+    };
+  }
+
+  /**
+   * Extract finish reason from response.
+   */
+  private extractFinishReason(response: any): string {
+    return response.choices?.[0]?.finish_reason || 'stop';
+  }
+
+  /**
+   * Extract model name from response.
+   */
+  private extractModel(response: any): string {
+    return response.model || this.model;
   }
 
   /**
