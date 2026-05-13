@@ -17,6 +17,25 @@ import type {
   ToolExecutionContext,
 } from "../agent/types.js";
 
+// ── Secret Redaction ──────────────────────────────────────────
+
+const SECRET_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /sk-[a-zA-Z0-9]{20,}/g, label: "[REDACTED_API_KEY]" },
+  { pattern: /sk-[a-f0-9]{32,}/gi, label: "[REDACTED_API_KEY]" },
+  { pattern: /(?:password|passwd|pwd)\s*[:=]\s*\S+/gi, label: "[REDACTED_PASSWORD]" },
+  { pattern: /(?:DEEPSEEK_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)\s*[:=]\s*["']?[a-zA-Z0-9_\-]{10,}/gi, label: "[REDACTED_SECRET]" },
+  { pattern: /(?:token|secret|api[_-]?key)\s*[:=]\s*["']?[a-zA-Z0-9_\-\.]{16,}/gi, label: "[REDACTED_SECRET]" },
+];
+
+function redactSecrets(output: string): string {
+  for (const { pattern, label } of SECRET_PATTERNS) {
+    output = output.replace(pattern, label);
+  }
+  return output;
+}
+
+const ENOENT_HINT = `\n[System Guidance: This file does not exist. Before retrying, use glob or grep to verify the file path. Do NOT fabricate file content.]`;
+
 // ── Execution plan ───────────────────────────────────────────
 
 export interface ToolExecutionSlot {
@@ -252,19 +271,35 @@ export class ToolExecutor {
         ),
       ]);
 
+      let finalResult = result.result;
+
+      // ── Secret redaction on all tool outputs ──────────────────
+      finalResult = redactSecrets(finalResult);
+
+      // ── ENOENT hint for file_read failures ────────────────────
+      if (
+        result.isError &&
+        toolCall.name === "file_read" &&
+        (finalResult.includes("ENOENT") || finalResult.includes("not found") || finalResult.includes("no such file"))
+      ) {
+        finalResult += ENOENT_HINT;
+      }
+
       return {
         toolCallId: toolCall.id,
         name: result.name,
-        result: result.result,
+        result: finalResult,
         isError: result.isError,
         duration: result.duration,
         metadata: result.metadata,
       };
     } catch (e: any) {
+      let errorMsg = `Tool execution error: ${e.message}`;
+      errorMsg = redactSecrets(errorMsg);
       return {
         toolCallId: toolCall.id,
         name: toolCall.name,
-        result: `Tool execution error: ${e.message}`,
+        result: errorMsg,
         isError: true,
         duration: Date.now() - startTime,
       };

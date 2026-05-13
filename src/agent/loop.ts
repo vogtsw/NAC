@@ -63,6 +63,29 @@ export class AgentLoop {
   private readonly maxRepeatedCalls = 3;
   private readonly TOKEN_BUDGET = 8000;
 
+  private static readonly VAGUE_PATTERNS: RegExp[] = [
+    /improve\s+(?:the\s+)?(?:project|code|this|it)/i,
+    /make\s+(?:it|this|the\s+(?:project|code))\s+better/i,
+    /fix\s+(?:the\s+)?(?:issues?|problems?|bugs?)/i,
+    /optimize\s+(?:the\s+)?(?:project|code|this)/i,
+    /clean\s+up\s+(?:the\s+)?(?:project|code)/i,
+    /refactor\s+(?:the\s+)?(?:project|code|everything)/i,
+    /enhance\s+(?:the\s+)?(?:project|code)/i,
+  ];
+
+  private static readonly SPECIFICITY_PATTERNS: RegExp[] = [
+    /(?:file|function|class|module|test|method|variable|type|interface|component)\s/i,
+    /(?:error|exception|bug|failure|warning|stack\s*trace)/i,
+    /(?:src\/|lib\/|test\/|app\/)/,
+    /\.(ts|js|py|json|yaml|md)/,
+  ];
+
+  private static isTaskUnderspecified(userRequest: string): boolean {
+    const isVague = AgentLoop.VAGUE_PATTERNS.some(p => p.test(userRequest));
+    const hasSpecifics = AgentLoop.SPECIFICITY_PATTERNS.some(p => p.test(userRequest));
+    return isVague && !hasSpecifics && userRequest.length < 200;
+  }
+
   constructor(options: LoopOptions = {}) {
     this.config = {
       model: options.config?.model ?? "deepseek-chat",
@@ -96,6 +119,18 @@ export class AgentLoop {
     // Use typed message construction — no JSON strings
     this.history.push(createUserMessage(userRequest));
 
+    // ── Underspecified task detection ─────────────────────────
+    if (AgentLoop.isTaskUnderspecified(userRequest)) {
+      this.history.push(createUserMessage(
+        "[System Guidance] This request is too vague to execute safely. " +
+        "Before using any tools, ask the user to clarify: " +
+        "(1) What specific aspect should be changed? " +
+        "(2) What is the acceptance criteria? " +
+        "(3) Which files, functions, or modules are involved? " +
+        "Do NOT execute tools until the user provides specifics."
+      ));
+    }
+
     const toolContext: ToolExecutionContext = {
       sessionId: `session_${Date.now()}`,
       workingDir: this.config.workingDir ?? process.cwd(),
@@ -120,14 +155,25 @@ export class AgentLoop {
       }
 
       // Build messages for API call
-      const { messages: rawMsgs } = this.contextBuilder.build(
-        userRequest,
-        this.history,
-        { skipSystemPrompt: iterations > 1 }
-      );
+      let apiMessages: any[];
 
-      // Use transcript.toChatMessages() — the single translation point
-      let apiMessages = toChatMessages(rawMsgs);
+      if (iterations === 1) {
+        // First iteration: use context builder (system prompt + user request)
+        const { messages: rawMsgs } = this.contextBuilder.build(
+          userRequest,
+          this.history,
+          { skipSystemPrompt: false }
+        );
+        apiMessages = toChatMessages(rawMsgs);
+      } else {
+        // Subsequent iterations: build directly from typed history to preserve
+        // tool_calls and tool_call_id (build() flattens them to strings, breaking API protocol)
+        const systemPrompt = this.contextBuilder.getSystemPrompt();
+        apiMessages = [
+          { role: "system", content: systemPrompt },
+          ...toChatMessages(this.history),
+        ];
+      }
 
       // ── Call LLM with fallback on payload errors ────────────
       let llmResponse = "";
@@ -140,10 +186,10 @@ export class AgentLoop {
       for (const budgetTokens of [this.TOKEN_BUDGET, 5000, 2500]) {
         if (estimateTotalTokens(this.history) > budgetTokens) {
           this.history = truncateTranscript(this.history, budgetTokens);
-          const { messages: msgs } = this.contextBuilder.build(
-            userRequest, this.history, { skipSystemPrompt: iterations > 1 }
-          );
-          apiMessages = toChatMessages(msgs);
+          apiMessages = [
+            { role: "system", content: this.contextBuilder.getSystemPrompt() },
+            ...toChatMessages(this.history),
+          ];
         }
 
         try {
