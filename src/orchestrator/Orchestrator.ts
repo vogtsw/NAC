@@ -120,10 +120,56 @@ export class Orchestrator {
   /**
    * Process a user request
    */
+  // Active mode for current cluster run (plan|agent|yolo)
+  private currentMode: string = "agent";
+
+  /**
+   * Centralized tool permission gate per mode (goal.md security model).
+   */
+  isToolAllowed(toolName: string, mode?: string): { allowed: boolean; reason?: string } {
+    const m = mode || this.currentMode;
+    // Write tools
+    const writeTools = ["file_write", "edit_file", "apply_patch", "file-ops"];
+    // Destructive tools
+    const destructiveTools = ["bash", "run_command", "terminal-exec"];
+    // Git write tools
+    const gitWriteTools = ["git_commit", "git_push"];
+    // Network tools
+    const networkTools = ["web_search", "web_fetch", "mcp_call_tool", "npm_install", "pip_install"];
+
+    if (m === "plan") {
+      if (writeTools.includes(toolName)) return { allowed: false, reason: "Plan mode: write tools are disabled" };
+      if (destructiveTools.includes(toolName)) return { allowed: false, reason: "Plan mode: shell is read-only diagnostics only" };
+      if (gitWriteTools.includes(toolName)) return { allowed: false, reason: "Plan mode: git write operations are disabled" };
+      if (networkTools.includes(toolName)) return { allowed: false, reason: "Plan mode: network access is disabled" };
+      return { allowed: true };
+    }
+
+    if (m === "agent") {
+      if (gitWriteTools.includes(toolName)) return { allowed: false, reason: "Agent mode: git push requires explicit approval" };
+      if (networkTools.includes(toolName)) return { allowed: false, reason: "Agent mode: network tools require explicit approval" };
+      return { allowed: true }; // Other writes/shell require approval (handled at tool level)
+    }
+
+    if (m === "yolo") {
+      if (toolName === "git_push") return { allowed: false, reason: "YOLO mode: git push still requires explicit approval" };
+      return { allowed: true };
+    }
+
+    return { allowed: true };
+  }
+
   async processRequest(request: ProcessRequest): Promise<any> {
     const { sessionId, userInput, context = {} } = request;
     const userId = context.scheduledTaskId ? 'scheduled' : (context.userId || 'default');
     const startTime = Date.now();
+
+    // Enforce runtime mode from context
+    this.currentMode = context.mode || "agent";
+    if (!["plan", "agent", "yolo"].includes(this.currentMode)) {
+      this.currentMode = "agent";
+    }
+    logger.info({ mode: this.currentMode, sessionId }, "Mode enforced for request");
 
     if (!this.initialized) {
       throw new Error('Orchestrator not initialized. Call initialize() first.');
@@ -279,12 +325,12 @@ export class Orchestrator {
           sessionId,
         });
 
-        // Build cluster artifacts from task results
+        // Build and persist cluster artifacts to Blackboard
         for (const [taskId, rawResult] of Object.entries(taskResults)) {
           const result = rawResult as any;
           const step = clusterDag.steps.find(s => s.id === taskId);
           if (step) {
-            clusterArtifacts.push({
+            const artifact: ClusterArtifact = {
               id: `${teamPlan.runId}_${taskId}`,
               runId: teamPlan.runId,
               type: step.outputArtifact,
@@ -292,8 +338,13 @@ export class Orchestrator {
               consumers: clusterDag.steps.filter(s => s.dependencies.includes(taskId)).map(s => s.agentRole),
               content: result,
               confidence: (result as any)?.error ? 0.5 : 0.95,
+              model: step.model,
+              tokenCost: (result as any)?.cost || 0,
               createdAt: Date.now(),
-            });
+            };
+            clusterArtifacts.push(artifact);
+            // Persist to Blackboard so downstream steps can consume
+            await this.blackboard.putArtifact(artifact);
           }
         }
 

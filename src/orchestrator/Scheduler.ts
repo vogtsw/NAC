@@ -117,6 +117,25 @@ export class Scheduler {
         continue;
       }
 
+      // Inject upstream artifact context before execution
+      for (const task of tasksToExecute) {
+        if (task.inputArtifacts && task.inputArtifacts.length > 0) {
+          const upstreamContext: string[] = [];
+          for (const depId of task.dependencies) {
+            const depResult = results.get(depId);
+            if (depResult?.result) {
+              const summary = typeof depResult.result === 'string'
+                ? depResult.result.substring(0, 500)
+                : JSON.stringify(depResult.result).substring(0, 500);
+              upstreamContext.push(`[Upstream ${depId} output]: ${summary}`);
+            }
+          }
+          if (upstreamContext.length > 0) {
+            task.description = `${task.description}\n\n## Upstream Artifact Context\n${upstreamContext.join("\n")}`;
+          }
+        }
+      }
+
       // Execute tasks with retry logic
       const executions = tasksToExecute.map((task) =>
         this.executeTaskWithRetry(task, sessionId, context).catch((error) => ({

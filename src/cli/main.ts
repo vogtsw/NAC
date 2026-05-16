@@ -59,6 +59,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "cluster") {
+    await runCluster(args.slice(1));
+    return;
+  }
+
   // ── Interactive mode ─────────────────────────────────
   await runInteractive();
 }
@@ -137,6 +142,80 @@ async function runSingleQuery(query: string): Promise<void> {
     result
   );
   console.log(`Trajectory saved: ${trajectory.id}`);
+}
+
+// ── Cluster Command ────────────────────────────────────
+
+async function runCluster(args: string[]): Promise<void> {
+  const taskInput = args[0];
+  const flags: Record<string, any> = {};
+  for (let i = 1; i < args.length; i++) {
+    if (args[i].startsWith("--")) {
+      const key = args[i].replace(/^--/, "");
+      flags[key] = args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : true;
+    }
+  }
+
+  if (!taskInput) {
+    console.error("Error: Task description required");
+    console.log('Usage: pnpm cli cluster "<task>" [--mode plan|agent|yolo] [--dry-run] [--json]');
+    process.exit(1);
+  }
+
+  const mode = flags.mode || "agent";
+  if (!["plan", "agent", "yolo"].includes(mode)) {
+    console.error(`Error: Invalid mode "${mode}". Use plan, agent, or yolo.`);
+    process.exit(1);
+  }
+
+  process.env.NAC_CLUSTER = "true";
+
+  const { createOrchestrator } = await import("../orchestrator/Orchestrator.js");
+  const { getSkillManager } = await import("../skills/SkillManager.js");
+
+  const dryRun = flags["dry-run"] || false;
+  const jsonOutput = flags.json || false;
+  const orchestrator = createOrchestrator({ useClusterPath: true });
+  const skillManager = getSkillManager();
+
+  await orchestrator.initialize();
+  await skillManager.initialize();
+
+  const sessionId = `cluster-${Date.now()}`;
+
+  if (!jsonOutput) {
+    console.log("\n" + "=".repeat(60));
+    console.log("       NAC DeepSeek Cluster Agent");
+    console.log("=".repeat(60));
+    console.log(`  Mode:     ${mode}`);
+    console.log(`  Dry Run:  ${dryRun ? "yes" : "no"}`);
+    console.log(`  Session:  ${sessionId}`);
+    console.log(`  Task:     ${taskInput.substring(0, 60)}`);
+    console.log("-".repeat(60) + "\n");
+  }
+
+  const startTime = Date.now();
+  try {
+    const result = await orchestrator.processRequest({
+      sessionId,
+      userInput: taskInput,
+      context: { mode, dryRun, cluster: true },
+    });
+
+    if (jsonOutput) {
+      console.log(JSON.stringify({ success: result.success, sessionId, mode, duration: Date.now() - startTime, data: result.data }, null, 2));
+    } else {
+      if (result.data?.response) console.log(result.data.response);
+      console.log(`\n${result.success ? "✓" : "✗"} Completed in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+    }
+    await orchestrator.shutdown();
+    process.exit(result.success ? 0 : 1);
+  } catch (error: any) {
+    if (jsonOutput) console.log(JSON.stringify({ success: false, error: error.message }));
+    else console.error(`\n✗ Cluster run failed: ${error.message}`);
+    await orchestrator.shutdown();
+    process.exit(1);
+  }
 }
 
 // ── Interactive Mode ───────────────────────────────────

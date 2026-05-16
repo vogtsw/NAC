@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/cli/main.ts",
     "cli": "tsx src/cli/main.ts",
+    "cluster": "tsx src/cli/main.ts cluster",
     "test": "vitest run",
     "test:core": "vitest run --config tests/vitest.config.ts tests/core-validation.test.ts",
     "test:integration": "vitest run --config tests/vitest.config.ts tests/integration-quick.test.ts",
