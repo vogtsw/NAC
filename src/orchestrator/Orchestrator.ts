@@ -318,7 +318,9 @@ export class Orchestrator {
         // Start the cluster reporter
         this.clusterReporter.start();
 
-        await this.blackboard.createSession(sessionId, { intent: searchIntent, dag, teamPlan, clusterDag });
+        // Use teamPlan.runId for session so artifact persistence matches
+        const clusterSessionId = teamPlan.runId || sessionId;
+        await this.blackboard.createSession(clusterSessionId, { intent: searchIntent, dag, teamPlan, clusterDag });
 
         const taskResults = await this.scheduler.schedule(sessionId, dag, {
           agentFactory: this.agentFactory,

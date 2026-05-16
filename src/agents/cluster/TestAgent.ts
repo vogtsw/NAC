@@ -12,8 +12,10 @@ export class TestAgent extends BaseAgent {
     this.setStatus(AgentStatus.BUSY);
 
     try {
-      // Use TestRunnerSkill to run actual tests
-      const testCmd = task.testCommand || task.description || "pnpm test";
+      // Only use explicit testCommand; never run DAG descriptions as shell commands
+      const testCmd = task.testCommand && task.testCommand.trim()
+        ? task.testCommand
+        : "pnpm test";
       const testPattern = task.testPattern || task.name || "";
 
       // Run tests via skill if available

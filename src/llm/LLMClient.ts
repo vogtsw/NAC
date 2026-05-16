@@ -25,6 +25,8 @@ export interface CompleteOptions {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: 'text' | 'json';
+  /** Per-request model override (DeepSeek cluster: Pro/Flash routing) */
+  model?: string;
   /** DeepSeek V4: enable/disable thinking mode */
   thinking?: 'enabled' | 'disabled';
   /** DeepSeek V4: reasoning effort level */
@@ -116,8 +118,10 @@ export class LLMClient {
       logger.debug({ model: this.model, promptLength: prompt.length,
         thinking: options.thinking, reasoningEffort: options.reasoningEffort }, 'Sending completion request');
 
+      const effectiveModel = options.model || this.model;
+
       const body: Record<string, unknown> = {
-        model: this.model,
+        model: effectiveModel,
         messages: messages as any,
         temperature: options.temperature ?? 0.7,
         max_tokens: options.maxTokens ?? 2000,
@@ -130,7 +134,7 @@ export class LLMClient {
       // DeepSeek V4 thinking/reasoning support
       // IMPORTANT: reasoning_effort requires thinking=enabled; DeepSeek rejects disabled+effort
       const thinkingEnabled = options.thinking !== "disabled";
-      if (this.model.startsWith('deepseek')) {
+      if (effectiveModel.startsWith('deepseek')) {
         (body as any).thinking = { type: options.thinking || "enabled" };
         if (thinkingEnabled && options.reasoningEffort) {
           (body as any).reasoning_effort = options.reasoningEffort;
@@ -194,9 +198,11 @@ export class LLMClient {
     }
     messages.push({ role: 'user', content: prompt });
 
+    const effectiveModel = options.model || this.model;
+
     try {
       const body: Record<string, unknown> = {
-        model: this.model,
+        model: effectiveModel,
         messages: messages as any,
         stream: true,
         temperature: options.temperature ?? 0.7,
@@ -204,7 +210,7 @@ export class LLMClient {
         stream_options: { include_usage: true },
       };
 
-      if (options.thinking && this.model.startsWith('deepseek')) {
+      if (options.thinking && effectiveModel.startsWith('deepseek')) {
         (body as any).extra_body = (body as any).extra_body || {};
         (body as any).thinking = { type: options.thinking };
       }
