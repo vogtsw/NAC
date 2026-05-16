@@ -47,3 +47,16 @@ export {
   createClusterReporter,
   type ClusterReport,
 } from './ClusterReporter.js';
+
+export {
+  PRGenerator,
+  createPRGenerator,
+  type PRSummary,
+  type PRPreflightResult,
+} from './PRGenerator.js';
+
+export {
+  GitHubIntegration,
+  createGitHubIntegration,
+  type PRCreateResult,
+} from './GitHubIntegration.js';

@@ -128,12 +128,13 @@ export class LLMClient {
       }
 
       // DeepSeek V4 thinking/reasoning support
-      if (options.thinking && this.model.startsWith('deepseek')) {
-        (body as any).thinking = { type: options.thinking };
-      }
-
-      if (options.reasoningEffort && this.model.startsWith('deepseek')) {
-        (body as any).reasoning_effort = options.reasoningEffort;
+      // IMPORTANT: reasoning_effort requires thinking=enabled; DeepSeek rejects disabled+effort
+      const thinkingEnabled = options.thinking !== "disabled";
+      if (this.model.startsWith('deepseek')) {
+        (body as any).thinking = { type: options.thinking || "enabled" };
+        if (thinkingEnabled && options.reasoningEffort) {
+          (body as any).reasoning_effort = options.reasoningEffort;
+        }
       }
 
       // Extra body params for provider-specific extensions

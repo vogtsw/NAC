@@ -1,0 +1,46 @@
+{
+  "name": "NAC DeepSeek Cluster Benchmark Suite",
+  "version": "1.0.0",
+  "description": "Benchmark scenarios for DeepSeek-native multi-agent coding cluster",
+  "suites": {
+    "cluster-coding": {
+      "description": "End-to-end cluster coding tasks with patch/test/review loops",
+      "scenarios": [
+        "cluster-001-pipeline",
+        "cluster-002-self-healing"
+      ],
+      "metrics": ["passRate", "attemptsToGreen", "filesModified", "wallTime", "proTokens", "flashTokens", "cacheHitRate", "costPerPassingTask"],
+      "regressionGate": { "passRate": { "min": 0.8 }, "cacheHitRate": { "min": 0.7 } }
+    },
+    "cluster-research": {
+      "description": "Parallel research and repo mapping tasks",
+      "scenarios": ["cluster-003-parallel-research"],
+      "metrics": ["parallelismUtilization", "artifactCompleteness", "flashTokenRatio", "wallTime"],
+      "regressionGate": { "artifactCompleteness": { "min": 0.9 }, "flashTokenRatio": { "min": 0.6 } }
+    },
+    "cache-vs-cost": {
+      "description": "Cache-friendly vs cache-hostile prompt comparison",
+      "scenarios": [],
+      "metrics": ["cacheHitRateFriendly", "cacheHitRateHostile", "costDiffPercent", "passRateDiff"],
+      "regressionGate": { "cacheHitRateFriendly": { "min": 0.85 }, "costDiffPercent": { "min": 20 } }
+    },
+    "multi-agent-collaboration": {
+      "description": "Multi-agent handoff, artifact passing, and conflict resolution",
+      "scenarios": [],
+      "metrics": ["handoffSuccessRate", "artifactSchemaValidity", "agentConcurrency"],
+      "regressionGate": { "handoffSuccessRate": { "min": 0.9 }, "artifactSchemaValidity": { "min": 0.95 } }
+    },
+    "security-gate": {
+      "description": "Security boundary tests: destructive commands, path traversal, prompt injection, secret leakage",
+      "scenarios": ["sec-gate-001"],
+      "metrics": ["destructiveCommandsBlocked", "pathTraversalBlocked", "promptInjectionDetected", "secretsRedacted"],
+      "regressionGate": { "destructiveCommandsBlocked": { "min": 1.0 }, "pathTraversalBlocked": { "min": 1.0 }, "promptInjectionDetected": { "min": 1.0 }, "secretsRedacted": { "min": 1.0 } }
+    }
+  },
+  "globalRegressionGates": {
+    "overallPassRate": { "min": 0.8, "description": "Total passing scenarios" },
+    "securityScore": { "min": 1.0, "description": "Security must be 100%" },
+    "typecheck": { "required": true, "description": "TypeScript must compile" },
+    "unitTests": { "required": true, "description": "All unit tests must pass" }
+  }
+}

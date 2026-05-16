@@ -8,6 +8,10 @@ import { IntentParser } from './IntentParser.js';
 import { DAGBuilder } from './DAGBuilder.js';
 import { DAGBuilderV2 } from './DAGBuilderV2.js';
 import { Scheduler } from './Scheduler.js';
+import { TeamBuilder, type TaskProfile } from './TeamBuilder.js';
+import { ClusterDAGBuilder } from './ClusterDAGBuilder.js';
+import { ClusterReporter, type ClusterReport } from './ClusterReporter.js';
+import type { ClusterArtifact } from './AgentHandoff.js';
 import { getBlackboard } from '../state/Blackboard.js';
 import { getEventBus, EventType } from '../state/EventBus.js';
 import { getSessionStore } from '../state/SessionStore.js';
@@ -33,6 +37,8 @@ export interface OrchestratorConfig {
   maxParallelAgents?: number;
   enableDAGOptimization?: boolean;
   maxTaskRetries?: number;
+  /** Enable DeepSeek cluster path (TeamBuilder + ClusterDAGBuilder) */
+  useClusterPath?: boolean;
 }
 
 /**
@@ -52,6 +58,10 @@ export class Orchestrator {
   private taskScheduler: ReturnType<typeof getTaskScheduler>;
   private feedbackCollector: ReturnType<typeof getFeedbackCollector>;
   private useEnhancedDAGBuilder: boolean;
+  private useClusterPath: boolean;
+  private teamBuilder?: TeamBuilder;
+  private clusterDAGBuilder?: ClusterDAGBuilder;
+  private clusterReporter?: ClusterReporter;
   private initialized: boolean = false;
 
   constructor(config: OrchestratorConfig = {}) {
@@ -72,7 +82,15 @@ export class Orchestrator {
     this.taskScheduler = getTaskScheduler();
     this.feedbackCollector = getFeedbackCollector();
 
-    logger.info({ useEnhancedDAGBuilder: this.useEnhancedDAGBuilder }, 'Orchestrator created');
+    // DeepSeek cluster path
+    this.useClusterPath = config.useClusterPath ?? (process.env.NAC_CLUSTER === 'true');
+    if (this.useClusterPath) {
+      this.teamBuilder = new TeamBuilder(this.llm);
+      this.clusterDAGBuilder = new ClusterDAGBuilder();
+      this.clusterReporter = new ClusterReporter();
+    }
+
+    logger.info({ useEnhancedDAGBuilder: this.useEnhancedDAGBuilder, useClusterPath: this.useClusterPath }, 'Orchestrator created');
   }
 
   /**
@@ -228,8 +246,78 @@ export class Orchestrator {
         };
       }
 
-      // 4. Build DAG
-      const dag = await this.dagBuilder.build(searchIntent);
+      // 4. Build DAG (cluster path or legacy path)
+      let dag: any;
+      let clusterReport: ClusterReport | undefined;
+      let clusterArtifacts: ClusterArtifact[] = [];
+
+      if (this.useClusterPath && this.teamBuilder && this.clusterDAGBuilder && this.clusterReporter) {
+        // DeepSeek cluster path: TeamBuilder → ClusterDAGBuilder → Scheduler
+        const taskProfile: TaskProfile = {
+          description: searchIntent.primaryGoal,
+          intent: searchIntent.type,
+          capabilities: searchIntent.capabilities || [],
+          complexity: typeof searchIntent.complexity === 'number' ? searchIntent.complexity :
+            (searchIntent.complexity === 'complex' ? 7 : searchIntent.complexity === 'medium' ? 4 : 2),
+          riskLevel: searchIntent.riskLevel,
+        };
+
+        const teamPlan = await this.teamBuilder.buildTeam(taskProfile);
+        logger.info({ runId: teamPlan.runId, mode: teamPlan.collaborationMode }, 'Cluster team built');
+
+        const clusterDag = this.clusterDAGBuilder.build(teamPlan);
+        dag = this.clusterDAGBuilder.toExecutableDAG(clusterDag);
+        logger.info({ steps: clusterDag.steps.length, maxParallelism: clusterDag.maxParallelism }, 'Cluster DAG built');
+
+        // Start the cluster reporter
+        this.clusterReporter.start();
+
+        await this.blackboard.createSession(sessionId, { intent: searchIntent, dag, teamPlan, clusterDag });
+
+        const taskResults = await this.scheduler.schedule(sessionId, dag, {
+          agentFactory: this.agentFactory,
+          sessionId,
+        });
+
+        // Build cluster artifacts from task results
+        for (const [taskId, rawResult] of Object.entries(taskResults)) {
+          const result = rawResult as any;
+          const step = clusterDag.steps.find(s => s.id === taskId);
+          if (step) {
+            clusterArtifacts.push({
+              id: `${teamPlan.runId}_${taskId}`,
+              runId: teamPlan.runId,
+              type: step.outputArtifact,
+              producer: step.agentRole,
+              consumers: clusterDag.steps.filter(s => s.dependencies.includes(taskId)).map(s => s.agentRole),
+              content: result,
+              confidence: (result as any)?.error ? 0.5 : 0.95,
+              createdAt: Date.now(),
+            });
+          }
+        }
+
+        clusterReport = this.clusterReporter.generateReport({
+          runId: teamPlan.runId,
+          teamPlan,
+          clusterDag,
+          artifacts: clusterArtifacts,
+          status: clusterArtifacts.some(a => a.confidence < 0.8) ? 'partial' : 'completed',
+        });
+
+        const result = this.formatClusterResult(teamPlan, taskResults, clusterReport, clusterArtifacts);
+        await this.sessionStore.addMessage(sessionId, 'assistant', `[Cluster] ${teamPlan.collaborationMode} run complete`);
+        await this.sessionStore.updateStatus(sessionId, clusterReport.status === 'completed' ? 'completed' : 'failed');
+
+        const executionTime = Date.now() - startTime;
+        await this.eventBus.publish(EventType.SESSION_COMPLETED, { sessionId, result });
+
+        logger.info({ sessionId, executionTime, clusterMode: true }, 'Cluster request processed');
+        return result;
+      }
+
+      // Legacy path: original DAGBuilder
+      dag = await this.dagBuilder.build(searchIntent);
       logger.info({ taskCount: dag.getAllTasks().length }, 'DAG built');
 
       // 5. Create session in blackboard
@@ -464,6 +552,45 @@ export class Orchestrator {
     const responseIndex = Math.floor(Math.random() * typeResponses.length);
 
     return typeResponses[responseIndex];
+  }
+
+  /**
+   * Format cluster run result with team plan, report, and artifacts.
+   */
+  private formatClusterResult(
+    teamPlan: any,
+    taskResults: Record<string, any>,
+    clusterReport: ClusterReport,
+    clusterArtifacts: ClusterArtifact[],
+  ): { success: boolean; data?: any; error?: string } {
+    const results = Object.values(taskResults);
+    const failedTasks = results.filter((r: any) => r.error);
+
+    return {
+      success: failedTasks.length === 0,
+      data: {
+        response: this.clusterReporter!.displayReport(clusterReport),
+        cluster: {
+          runId: teamPlan.runId,
+          mode: teamPlan.collaborationMode,
+          coordinator: teamPlan.coordinator,
+          members: teamPlan.members,
+          report: clusterReport,
+          artifacts: clusterArtifacts.map(a => ({
+            id: a.id,
+            type: a.type,
+            producer: a.producer,
+          })),
+        },
+        tasks: results,
+        summary: {
+          totalTasks: results.length,
+          totalDuration: clusterReport.duration,
+          estimatedCost: clusterReport.totalCost,
+          cacheHitRate: clusterReport.cacheHitRate,
+        },
+      },
+    };
   }
 
   /**
@@ -702,6 +829,59 @@ export class Orchestrator {
    */
   async getActiveAgents(): Promise<any[]> {
     return await this.agentFactory.getActiveAgents();
+  }
+
+  /**
+   * Resume a previous session from its checkpoint.
+   */
+  async resumeSession(sessionId: string, additionalInput?: string): Promise<any> {
+    if (!this.initialized) throw new Error("Orchestrator not initialized.");
+
+    const state = await this.blackboard.getState(sessionId);
+    if (!state) throw new Error(`Session not found: ${sessionId}`);
+
+    const checkpointId = `${sessionId}_checkpoint_*`;
+    const checkpoints = await this.blackboard.listCheckpoints(sessionId);
+
+    if (checkpoints.length === 0) {
+      throw new Error(`No checkpoint found for session: ${sessionId}`);
+    }
+
+    const latestCheckpoint = checkpoints[checkpoints.length - 1];
+    const restored = await this.blackboard.restoreCheckpoint(latestCheckpoint, sessionId);
+
+    if (!restored) throw new Error(`Failed to restore checkpoint for session: ${sessionId}`);
+
+    logger.info({ sessionId, checkpointId: latestCheckpoint }, "Session resumed from checkpoint");
+
+    if (additionalInput) {
+      return this.processRequest({
+        sessionId,
+        userInput: additionalInput,
+        context: { resumed: true, checkpointId: latestCheckpoint },
+      });
+    }
+
+    const artifacts = await this.blackboard.listArtifacts(sessionId);
+    return {
+      success: true,
+      data: {
+        sessionId,
+        resumed: true,
+        status: state.status,
+        artifacts: artifacts.map(a => ({ id: a.id, type: a.type })),
+        message: `Session ${sessionId} restored. ${artifacts.length} artifacts available.`,
+      },
+    };
+  }
+
+  /**
+   * Create a checkpoint for the current session state.
+   */
+  async checkpointSession(sessionId: string): Promise<string> {
+    const checkpointId = await this.blackboard.createCheckpoint(sessionId);
+    logger.info({ sessionId, checkpointId }, "Session checkpoint created");
+    return checkpointId;
   }
 
   /**

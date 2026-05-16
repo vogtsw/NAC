@@ -408,6 +408,7 @@ export class SkillManager {
     const { PatchSkill } = await import('./builtin/PatchSkill.js');
     const { TestRunnerSkill, DiagnosticsSkill } = await import('./builtin/TestRunnerSkill.js');
     const { AgentSpawnSkill } = await import('./builtin/AgentSpawnSkill.js');
+    const { MCPSkill } = await import('./builtin/MCPSkill.js');
 
     this.register(CodeGenerationSkill);
     this.register(FileOpsSkill);
@@ -422,6 +423,7 @@ export class SkillManager {
     this.register(TestRunnerSkill);
     this.register(DiagnosticsSkill);
     this.register(AgentSpawnSkill);
+    this.register(MCPSkill);
 
     logger.info({ count: 8 }, 'Builtin skills loaded');
   }

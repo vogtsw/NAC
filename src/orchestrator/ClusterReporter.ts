@@ -88,14 +88,17 @@ export class ClusterReporter {
     // Calculate worker stats
     const workers = this.calculateWorkerStats(args.teamPlan, args.clusterDag);
 
-    // Calculate token totals
+    // Calculate token totals using actual model metadata from team plan
+    const proRoles = new Set(["coordinator", "planner", "code_agent", "reviewer"]);
     let totalProTokens = 0;
     let totalFlashTokens = 0;
     let totalCacheHits = 0;
     let totalCacheMisses = 0;
 
-    for (const [, usage] of this.tokenUsage) {
-      if (usage.promptTokens > 2000) {
+    for (const [agentType, usage] of this.tokenUsage) {
+      const member = args.teamPlan.members.find(m => m.agentType === agentType);
+      const isPro = member?.model === "deepseek-v4-pro" || proRoles.has(member?.role || "");
+      if (isPro) {
         totalProTokens += usage.totalTokens;
       } else {
         totalFlashTokens += usage.totalTokens;

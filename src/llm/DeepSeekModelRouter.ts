@@ -6,6 +6,7 @@
 
 import type { DeepSeekModelPolicy, DeepSeekModel } from "./DeepSeekModelPolicy.js";
 import { ROLE_MODEL_POLICIES } from "./DeepSeekModelPolicy.js";
+import { calculateCost } from "./DeepSeekPricing.js";
 import { getLogger } from "../monitoring/logger.js";
 
 const logger = getLogger("DeepSeekModelRouter");
@@ -153,31 +154,14 @@ export class DeepSeekModelRouter {
 
   /**
    * Estimate token cost for a model policy given estimated prompt/completion tokens.
+   * Uses centralized DeepSeekPricing module.
    */
   estimateCost(
     policy: DeepSeekModelPolicy,
     promptTokens: number,
     completionTokens: number,
   ): { promptCost: number; completionCost: number; totalCost: number } {
-    // DeepSeek V4 pricing (approximate, subject to change)
-    const pricing: Record<DeepSeekModel, { prompt: number; completion: number }> = {
-      "deepseek-v4-pro": { prompt: 0.14, completion: 0.42 }, // $/1M tokens
-      "deepseek-v4-flash": { prompt: 0.04, completion: 0.12 }, // $/1M tokens
-    };
-
-    const rates = pricing[policy.model];
-    const promptCost = (promptTokens / 1_000_000) * rates.prompt;
-    const completionCost = (completionTokens / 1_000_000) * rates.completion;
-
-    // Thinking tax: reasoning tokens count as completion
-    const thinkingMultiplier = policy.thinking === "enabled" && policy.reasoningEffort === "max" ? 1.5 : 1.0;
-    const adjustedCompletionCost = completionCost * thinkingMultiplier;
-
-    return {
-      promptCost: Math.round(promptCost * 10000) / 10000,
-      completionCost: Math.round(adjustedCompletionCost * 10000) / 10000,
-      totalCost: Math.round((promptCost + adjustedCompletionCost) * 10000) / 10000,
-    };
+    return calculateCost(policy.model, promptTokens, completionTokens, policy.reasoningEffort);
   }
 }
 

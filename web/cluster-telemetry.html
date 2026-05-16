@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAC DeepSeek Cost Telemetry</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff; --purple: #a371f7; --pro: #58a6ff; --flash: #3fb950; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, monospace; background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 16px; color: var(--blue); margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .card h2 { font-size: 12px; color: var(--blue); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+  .metric { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(48,54,61,0.5); font-size: 13px; }
+  .metric:last-child { border: none; }
+  .val { font-weight: 700; font-size: 14px; font-family: monospace; }
+  .bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+  .f-g { background: var(--green); } .f-b { background: var(--blue); } .f-y { background: var(--yellow); } .f-r { background: var(--red); } .f-p { background: var(--purple); }
+  .live { display: inline-block; width: 8px; height: 8px; background: var(--green); border-radius: 50%; margin-right: 6px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  #log { max-height: 200px; overflow-y: auto; font-size: 11px; }
+  .log-line { padding: 2px 0; border-left: 2px solid var(--border); padding-left: 8px; margin: 2px 0; }
+  .log-start { border-color: var(--blue); } .log-ok { border-color: var(--green); } .log-fail { border-color: var(--red); } .log-cost { border-color: var(--purple); }
+  button { background: var(--blue); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  button:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+<h1><span class="live"></span>NAC DeepSeek Cost Telemetry</h1>
+
+<div class="grid">
+  <div class="card">
+    <h2>💰 Cost Dashboard</h2>
+    <div class="metric"><span>Session Cost</span><span class="val" style="color:var(--yellow)" id="totalCost">$0.0000</span></div>
+    <div class="bar"><div class="fill f-y" id="costBar" style="width:0%"></div></div>
+    <div class="metric"><span>Pro Tokens</span><span class="val" id="proTokens">0</span></div>
+    <div class="bar"><div class="fill f-b" id="proBar" style="width:0%"></div></div>
+    <div class="metric"><span>Flash Tokens</span><span class="val" id="flashTokens">0</span></div>
+    <div class="bar"><div class="fill f-g" id="flashBar" style="width:0%"></div></div>
+    <div class="metric"><span>Cost/Task</span><span class="val" id="costPerTask">$0.0000</span></div>
+    <div class="metric"><span>Cost Limit</span><span class="val" id="costLimit">$1.00</span></div>
+    <div class="bar"><div class="fill f-r" id="limitBar" style="width:0%"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>📊 Cache Performance</h2>
+    <div class="metric"><span>Cache Hit Rate</span><span class="val" style="color:var(--green)" id="cacheRate">0%</span></div>
+    <div class="bar"><div class="fill f-g" id="cacheBar" style="width:0%"></div></div>
+    <div class="metric"><span>Hit Tokens</span><span class="val" id="hitTokens">0</span></div>
+    <div class="metric"><span>Miss Tokens</span><span class="val" id="missTokens">0</span></div>
+    <div class="metric"><span>Prefix Stable</span><span class="val" id="prefixStable">-</span></div>
+    <div class="metric"><span>Tool Order Stable</span><span class="val" id="toolStable">-</span></div>
+    <div class="metric"><span>Prefix Hash</span><span class="val mono" style="font-size:10px" id="prefixHash">-</span></div>
+  </div>
+
+  <div class="card">
+    <h2>⚡ Runtime</h2>
+    <div class="metric"><span>Wall Clock</span><span class="val" id="wallClock">0s</span></div>
+    <div class="metric"><span>Active Agents</span><span class="val" id="activeAgents">0</span></div>
+    <div class="metric"><span>Completed Steps</span><span class="val" id="completedSteps">0</span></div>
+    <div class="metric"><span>Failed Steps</span><span class="val" id="failedSteps">0</span></div>
+    <div class="metric"><span>Tool Calls</span><span class="val" id="toolCalls">0</span></div>
+    <div class="metric"><span>Tool Success Rate</span><span class="val" id="toolSuccess">-</span></div>
+    <div class="metric"><span>Repair Events</span><span class="val" id="repairEvents">0</span></div>
+  </div>
+
+  <div class="card">
+    <h2>📋 Model Usage</h2>
+    <div class="metric"><span>Pro (coordinator)</span><span class="val" id="proCoord">0</span></div>
+    <div class="metric"><span>Pro (planner)</span><span class="val" id="proPlanner">0</span></div>
+    <div class="metric"><span>Pro (code)</span><span class="val" id="proCode">0</span></div>
+    <div class="metric"><span>Pro (review)</span><span class="val" id="proReview">0</span></div>
+    <div class="metric"><span>Flash (research)</span><span class="val" id="flashResearch">0</span></div>
+    <div class="metric"><span>Flash (test)</span><span class="val" id="flashTest">0</span></div>
+    <div class="metric"><span>Pro/Flash Ratio</span><span class="val" id="proFlashRatio">-</span></div>
+  </div>
+</div>
+
+<div style="margin-top: 16px;">
+  <div class="card">
+    <h2>📝 Event Log</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<div style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+  <button onclick="connectTelemetry()">Connect Telemetry</button>
+  <button onclick="simulateRun()">Simulate Run</button>
+  <button onclick="resetTelemetry()">Reset</button>
+  <span style="font-size:11px;color:#8b949e" id="status">Disconnected</span>
+</div>
+
+<script>
+const state = {
+  totalCost: 0, proTokens: 0, flashTokens: 0, tasks: 0,
+  cacheHits: 0, cacheMisses: 0,
+  wallClock: 0, activeAgents: 0, completed: 0, failed: 0,
+  toolCalls: 0, toolSuccesses: 0, repairEvents: 0,
+  prefixHash: "", prefixStable: false, toolStable: true,
+  models: { proCoord:0, proPlanner:0, proCode:0, proReview:0, flashResearch:0, flashTest:0 },
+  log: []
+};
+
+function fmt(n) { return n.toLocaleString(); }
+function fmt$(n) { return "$" + n.toFixed(4); }
+function pct(n,d) { return d ? (n/d*100).toFixed(1)+"%" : "0%"; }
+
+function addLog(msg, cls) {
+  state.log.push({ msg, cls, t: new Date().toLocaleTimeString() });
+  if (state.log.length > 50) state.log.shift();
+  renderLog();
+}
+
+function renderLog() {
+  const el = document.getElementById("log");
+  el.innerHTML = state.log.slice(-20).map(l =>
+    `<div class="log-line ${l.cls}">[${l.t}] ${l.msg}</div>`
+  ).join("");
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateUI() {
+  const maxTokens = Math.max(state.proTokens + state.flashTokens, 1);
+  const maxCost = 1.0;
+
+  document.getElementById("totalCost").textContent = fmt$(state.totalCost);
+  document.getElementById("costBar").style.width = Math.min(state.totalCost / maxCost * 100, 100) + "%";
+  document.getElementById("proTokens").textContent = fmt(state.proTokens);
+  document.getElementById("proBar").style.width = (state.proTokens / maxTokens * 100) + "%";
+  document.getElementById("flashTokens").textContent = fmt(state.flashTokens);
+  document.getElementById("flashBar").style.width = (state.flashTokens / maxTokens * 100) + "%";
+  document.getElementById("costPerTask").textContent = fmt$(state.tasks ? state.totalCost / state.tasks : 0);
+  document.getElementById("limitBar").style.width = Math.min(state.totalCost / maxCost * 100, 100) + "%";
+
+  const totalCache = state.cacheHits + state.cacheMisses;
+  const cacheRate = totalCache ? state.cacheHits / totalCache : 0;
+  document.getElementById("cacheRate").textContent = pct(state.cacheHits, totalCache);
+  document.getElementById("cacheBar").style.width = (cacheRate * 100) + "%";
+  document.getElementById("hitTokens").textContent = fmt(state.cacheHits);
+  document.getElementById("missTokens").textContent = fmt(state.cacheMisses);
+  document.getElementById("prefixStable").textContent = state.prefixStable ? "✅" : "❌";
+  document.getElementById("prefixStable").style.color = state.prefixStable ? "#3fb950" : "#f85149";
+  document.getElementById("toolStable").textContent = state.toolStable ? "✅" : "❌";
+  document.getElementById("toolStable").style.color = state.toolStable ? "#3fb950" : "#f85149";
+  document.getElementById("prefixHash").textContent = state.prefixHash || "-";
+
+  document.getElementById("wallClock").textContent = (state.wallClock / 1000).toFixed(1) + "s";
+  document.getElementById("activeAgents").textContent = state.activeAgents;
+  document.getElementById("completedSteps").textContent = state.completed;
+  document.getElementById("failedSteps").textContent = state.failed;
+  document.getElementById("toolCalls").textContent = state.toolCalls;
+  document.getElementById("toolSuccess").textContent = state.toolCalls ? pct(state.toolSuccesses, state.toolCalls) : "-";
+  document.getElementById("repairEvents").textContent = state.repairEvents;
+
+  document.getElementById("proCoord").textContent = fmt(state.models.proCoord);
+  document.getElementById("proPlanner").textContent = fmt(state.models.proPlanner);
+  document.getElementById("proCode").textContent = fmt(state.models.proCode);
+  document.getElementById("proReview").textContent = fmt(state.models.proReview);
+  document.getElementById("flashResearch").textContent = fmt(state.models.flashResearch);
+  document.getElementById("flashTest").textContent = fmt(state.models.flashTest);
+
+  const totalPro = state.models.proCoord + state.models.proPlanner + state.models.proCode + state.models.proReview;
+  const totalFlash = state.models.flashResearch + state.models.flashTest;
+  document.getElementById("proFlashRatio").textContent = totalFlash ? (totalPro / totalFlash).toFixed(2) : "-";
+}
+
+function simulateRun() {
+  addLog("Cluster run started (pipeline mode)", "log-start");
+  state.activeAgents = 1;
+  updateUI();
+
+  const steps = [
+    { name: "PlannerAgent", model: "proPlanner", tokens: 3000, cost: 0.001, delay: 800, cache: 0.7 },
+    { name: "ResearchAgent#1", model: "flashResearch", tokens: 500, cost: 0.0001, delay: 400, cache: 0.9 },
+    { name: "ResearchAgent#2", model: "flashResearch", tokens: 500, cost: 0.0001, delay: 400, cache: 0.9 },
+    { name: "CodeAgent", model: "proCode", tokens: 2000, cost: 0.0008, delay: 1000, cache: 0.6 },
+    { name: "TestAgent", model: "flashTest", tokens: 800, cost: 0.0002, delay: 600, cache: 0.85 },
+    { name: "ReviewAgent", model: "proReview", tokens: 1500, cost: 0.0006, delay: 800, cache: 0.5 },
+    { name: "CoordinatorAgent", model: "proCoord", tokens: 1000, cost: 0.0004, delay: 500, cache: 0.8 },
+  ];
+
+  let cumulativePro = 0, cumulativeFlash = 0, cumulativeCost = 0;
+
+  steps.forEach((step, i) => {
+    setTimeout(() => {
+      state.activeAgents = Math.min(steps.length - i, 3);
+      state.completed++;
+      state.tasks++;
+      state.toolCalls += 2;
+      state.toolSuccesses += 2;
+
+      const isPro = step.model.startsWith("pro");
+      if (isPro) {
+        state.proTokens += step.tokens;
+        state.models[step.model] += step.tokens;
+        cumulativePro += step.tokens;
+      } else {
+        state.flashTokens += step.tokens;
+        state.models[step.model] += step.tokens;
+        cumulativeFlash += step.tokens;
+      }
+
+      state.cacheHits += Math.round(step.tokens * step.cache);
+      state.cacheMisses += Math.round(step.tokens * (1 - step.cache));
+      state.totalCost += step.cost;
+      state.wallClock += step.delay;
+
+      addLog(`${step.name}: +${fmt(step.tokens)} tokens, ${fmt$(step.cost)} (cache: ${(step.cache*100).toFixed(0)}%)`, i > 1 && Math.random() > 0.8 ? "log-fail" : "log-ok");
+
+      updateUI();
+
+      if (i === steps.length - 1) {
+        state.activeAgents = 0;
+        addLog(`Run complete: ${fmt$(state.totalCost)} total, ${pct(state.cacheHits, state.cacheHits+state.cacheMisses)} cache hit`, "log-cost");
+        updateUI();
+      }
+    }, (i + 1) * step.delay);
+  });
+}
+
+function resetTelemetry() {
+  Object.assign(state, {
+    totalCost: 0, proTokens: 0, flashTokens: 0, tasks: 0,
+    cacheHits: 0, cacheMisses: 0,
+    wallClock: 0, activeAgents: 0, completed: 0, failed: 0,
+    toolCalls: 0, toolSuccesses: 0, repairEvents: 0,
+    prefixHash: "abc123def456", prefixStable: true, toolStable: true,
+    models: { proCoord:0, proPlanner:0, proCode:0, proReview:0, flashResearch:0, flashTest:0 },
+    log: []
+  });
+  updateUI();
+  renderLog();
+  addLog("Telemetry reset", "log-ok");
+}
+
+function connectTelemetry() {
+  const el = document.getElementById("status");
+  el.textContent = "Polling WS...";
+  el.style.color = "#d29922";
+  addLog("Attempting telemetry connection...", "log-start");
+  setTimeout(() => {
+    el.textContent = "Simulation mode";
+    el.style.color = "#8b949e";
+    addLog("No live backend — use Simulate Run", "log-cost");
+  }, 1500);
+}
+
+resetTelemetry();
+</script>
+</body>
+</html>

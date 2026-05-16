@@ -9,6 +9,10 @@ import { CodeAgent } from './CodeAgent.js';
 import { DataAgent } from './DataAgent.js';
 import { AutomationAgent } from './AutomationAgent.js';
 import { AnalysisAgent } from './AnalysisAgent.js';
+import { CoordinatorAgent } from './cluster/CoordinatorAgent.js';
+import { PlannerAgent } from './cluster/PlannerAgent.js';
+import { ResearchAgent } from './cluster/ResearchAgent.js';
+import { ReviewAgent } from './cluster/ReviewAgent.js';
 import { AgentConfig, AgentInfo, AgentStatus } from '../state/models.js';
 import { SkillManager, getSkillManager } from '../skills/SkillManager.js';
 import { getLogger } from '../monitoring/logger.js';
@@ -17,7 +21,7 @@ import { LLMClient } from '../llm/LLMClient.js';
 const logger = getLogger('AgentFactory');
 
 /**
- * Agent registry mapping
+ * Agent registry mapping — includes DeepSeek cluster agents
  */
 const AGENT_REGISTRY: Record<string, new (llm: any, skillManager: any) => BaseAgent> = {
   GenericAgent,
@@ -25,6 +29,10 @@ const AGENT_REGISTRY: Record<string, new (llm: any, skillManager: any) => BaseAg
   DataAgent,
   AutomationAgent,
   AnalysisAgent,
+  CoordinatorAgent,
+  PlannerAgent,
+  ResearchAgent,
+  ReviewAgent,
 };
 
 /**

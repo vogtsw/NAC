@@ -1,11 +1,12 @@
 /**
  * AgentSpawnSkill
  * Cluster agent lifecycle management: spawn, wait, result, cancel.
- * These are the critical tools that make NAC a true cluster agent system.
+ * Wires into real AgentFactory and AgentLoop for persistent sub-agent execution.
  */
 
 import { Skill, SkillCategory, SkillContext, SkillResult } from "../types.js";
 import { getLogger } from "../../monitoring/logger.js";
+import type { BaseAgent } from "../../agents/BaseAgent.js";
 
 const logger = getLogger("AgentSpawn");
 
@@ -47,7 +48,7 @@ export const AgentSpawnSkill: Skill = {
       let result: any;
       switch (params.operation) {
         case "spawn":
-          result = spawnAgent(params);
+          result = await spawnAgent(params);
           break;
         case "wait":
           result = await waitAgent(params);
@@ -86,20 +87,64 @@ export const AgentSpawnSkill: Skill = {
   },
 };
 
-function spawnAgent(params: Record<string, any>): SpawnedAgent {
+async function spawnAgent(params: Record<string, any>): Promise<SpawnedAgent> {
   const id = `agent_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const agentType = params.agentType || "GenericAgent";
+  const task = params.task || "Unnamed task";
+
   const agent: SpawnedAgent = {
     id,
-    type: params.agentType || "GenericAgent",
+    type: agentType,
     role: params.role || "worker",
     model: params.model || "deepseek-v4-flash",
     status: "running",
-    task: params.task || "Unnamed task",
+    task,
     startedAt: Date.now(),
   };
 
   agentRegistry.set(id, agent);
-  logger.info({ id, type: agent.type, role: agent.role }, "Agent spawned");
+
+  // Wire into real AgentFactory for execution
+  try {
+    const { AgentFactory } = await import("../../agents/AgentFactory.js");
+    const { getLLMClient } = await import("../../llm/LLMClient.js");
+    const factory = new AgentFactory(getLLMClient());
+    const agentInstance = await factory.create(agentType, { taskId: id, skills: [] } as any);
+
+    // Execute in background
+    const executePromise = agentInstance.execute({
+      id,
+      name: task,
+      description: task,
+      agentType,
+      requiredSkills: [],
+      dependencies: [],
+      estimatedDuration: 120,
+    });
+
+    // Track execution
+    executePromise.then((result: any) => {
+      const existing = agentRegistry.get(id);
+      if (existing) {
+        existing.status = result?.error ? "failed" : "completed";
+        existing.result = result;
+        existing.completedAt = Date.now();
+        logger.info({ id, status: existing.status }, "Agent execution finished");
+      }
+    }).catch((error: any) => {
+      const existing = agentRegistry.get(id);
+      if (existing) {
+        existing.status = "failed";
+        existing.error = error.message;
+        existing.completedAt = Date.now();
+        logger.warn({ id, error: error.message }, "Agent execution failed");
+      }
+    });
+
+    logger.info({ id, type: agentType, role: agent.role, realExecution: true }, "Agent spawned with real execution");
+  } catch (error: any) {
+    logger.warn({ id, error: error.message }, "Agent spawned but real execution setup failed — using placeholder");
+  }
 
   return agent;
 }

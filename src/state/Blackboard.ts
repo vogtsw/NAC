@@ -559,6 +559,116 @@ export class Blackboard {
     delete (state as any)[key];
     await this.saveState(state);
   }
+
+  // ── Typed Cluster Artifact API ──────────────────────────
+
+  /**
+   * Store a typed cluster artifact on the blackboard.
+   */
+  async putArtifact(artifact: {
+    id: string;
+    runId: string;
+    type: string;
+    producer: string;
+    consumers?: string[];
+    content: unknown;
+    confidence?: number;
+    model?: string;
+    tokenCost?: number;
+    cacheHitTokens?: number;
+    cacheMissTokens?: number;
+  }): Promise<void> {
+    const state = await this.getState(artifact.runId);
+    if (!state) {
+      throw new Error(`Session ${artifact.runId} not found for artifact storage`);
+    }
+
+    const fullArtifact = {
+      ...artifact,
+      consumers: artifact.consumers || [],
+      confidence: artifact.confidence ?? 0.9,
+      createdAt: Date.now(),
+    };
+
+    state.artifacts.push(fullArtifact);
+    await this.saveState(state);
+    await this.publishEvent('artifact.put', { runId: artifact.runId, artifactId: artifact.id, type: artifact.type });
+    logger.debug({ artifactId: artifact.id, type: artifact.type }, 'Artifact stored');
+  }
+
+  /**
+   * Get a specific artifact by ID.
+   */
+  async getArtifact(runId: string, artifactId: string): Promise<any | null> {
+    const state = await this.getState(runId);
+    if (!state) return null;
+    return state.artifacts.find((a: any) => a.id === artifactId) || null;
+  }
+
+  /**
+   * List all artifacts for a cluster run, optionally filtered by type.
+   */
+  async listArtifacts(runId: string, filter?: { type?: string; producer?: string }): Promise<any[]> {
+    const state = await this.getState(runId);
+    if (!state) return [];
+    let artifacts = state.artifacts;
+    if (filter?.type) {
+      artifacts = artifacts.filter((a: any) => a.type === filter.type);
+    }
+    if (filter?.producer) {
+      artifacts = artifacts.filter((a: any) => a.producer === filter.producer);
+    }
+    return artifacts;
+  }
+
+  /**
+   * Link a consumer agent to an artifact.
+   */
+  async linkArtifactConsumer(runId: string, artifactId: string, consumer: string): Promise<boolean> {
+    const state = await this.getState(runId);
+    if (!state) return false;
+    const artifact = state.artifacts.find((a: any) => a.id === artifactId);
+    if (!artifact) return false;
+    if (!artifact.consumers.includes(consumer)) {
+      artifact.consumers.push(consumer);
+      await this.saveState(state);
+    }
+    return true;
+  }
+
+  /**
+   * Validate artifact schema against expected type.
+   */
+  validateArtifact(artifact: any, expectedType: string): { valid: boolean; issues: string[] } {
+    const issues: string[] = [];
+    if (!artifact.id) issues.push('Missing artifact id');
+    if (!artifact.type) issues.push('Missing artifact type');
+    if (artifact.type !== expectedType) issues.push(`Expected type ${expectedType}, got ${artifact.type}`);
+    if (!artifact.producer) issues.push('Missing artifact producer');
+    return { valid: issues.length === 0, issues };
+  }
+
+  /**
+   * Get artifact completeness metrics for a run.
+   */
+  async getArtifactCompleteness(runId: string): Promise<{
+    total: number;
+    byType: Record<string, number>;
+    completeness: number;
+  }> {
+    const artifacts = await this.listArtifacts(runId);
+    const byType: Record<string, number> = {};
+
+    for (const a of artifacts) {
+      byType[a.type] = (byType[a.type] || 0) + 1;
+    }
+
+    const expectedTypes = ['plan', 'repo_context', 'patch', 'test_report', 'review', 'final_answer'];
+    const foundExpected = expectedTypes.filter(t => byType[t]);
+    const completeness = foundExpected.length / expectedTypes.length;
+
+    return { total: artifacts.length, byType, completeness: Math.round(completeness * 100) / 100 };
+  }
 }
 
 /**

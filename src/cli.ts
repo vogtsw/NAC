@@ -157,6 +157,10 @@ async function executeCommand(cli: CLIOptions): Promise<void> {
       await cmdGateway(cli.args, cli.options);
       break;
 
+    case 'cluster':
+      await cmdCluster(cli.args, cli.options);
+      break;
+
     case 'feedback':
       await cmdFeedback(cli.args, cli.options);
       break;
@@ -552,6 +556,95 @@ async function cmdRun(args: string[], options: Record<string, any>): Promise<voi
   console.log(JSON.stringify(result, null, 2));
 
   await orchestrator.shutdown();
+}
+
+/**
+ * Cluster command: DeepSeek cluster agent execution
+ * Usage: nac cluster "<task>" [--mode plan|agent|yolo] [--dry-run]
+ */
+async function cmdCluster(args: string[], options: Record<string, any>): Promise<void> {
+  const { createOrchestrator } = await import('./orchestrator/Orchestrator.js');
+  const { getSkillManager } = await import('./skills/SkillManager.js');
+
+  const taskInput = args[0];
+  if (!taskInput) {
+    console.error('Error: Task description required');
+    console.log('Usage: pnpm cli cluster "<task description>" [--mode plan|agent|yolo] [--dry-run] [--json]');
+    console.log('Examples:');
+    console.log('  pnpm cli cluster "Fix failing tests in auth module"');
+    console.log('  pnpm cli cluster "Add login API" --mode plan --dry-run');
+    console.log('  pnpm cli cluster "Refactor user service" --mode agent --json');
+    process.exit(1);
+  }
+
+  const mode = options.mode || 'agent';
+  if (!['plan', 'agent', 'yolo'].includes(mode)) {
+    console.error(`Error: Invalid mode "${mode}". Use plan, agent, or yolo.`);
+    process.exit(1);
+  }
+
+  const dryRun = options['dry-run'] || options.dryRun || false;
+  const jsonOutput = options.json || false;
+
+  // Enable cluster path
+  process.env.NAC_CLUSTER = 'true';
+
+  const orchestrator = createOrchestrator({ useClusterPath: true });
+  const skillManager = getSkillManager();
+
+  await orchestrator.initialize();
+  await skillManager.initialize();
+
+  const sessionId = `cluster-${Date.now()}`;
+
+  if (!jsonOutput) {
+    console.log('\n' + '='.repeat(60));
+    console.log('       NAC DeepSeek Cluster Agent');
+    console.log('='.repeat(60));
+    console.log(`  Mode:     ${mode}`);
+    console.log(`  Dry Run:  ${dryRun ? 'yes (plan-only, no writes)' : 'no'}`);
+    console.log(`  Session:  ${sessionId}`);
+    console.log(`  Task:     ${taskInput.substring(0, 50)}${taskInput.length > 50 ? '...' : ''}`);
+    console.log('-'.repeat(60) + '\n');
+  }
+
+  const startTime = Date.now();
+
+  try {
+    const result = await orchestrator.processRequest({
+      sessionId,
+      userInput: taskInput,
+      context: { mode, dryRun, cluster: true },
+    });
+
+    const elapsed = Date.now() - startTime;
+
+    if (jsonOutput) {
+      console.log(JSON.stringify({
+        success: result.success,
+        sessionId,
+        mode,
+        duration: elapsed,
+        data: result.data,
+      }, null, 2));
+    } else {
+      if (result.data?.response) {
+        console.log(result.data.response);
+      }
+      console.log(`\n${result.success ? '✓' : '✗'} Completed in ${(elapsed / 1000).toFixed(2)}s`);
+    }
+
+    await orchestrator.shutdown();
+    process.exit(result.success ? 0 : 1);
+  } catch (error: any) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ success: false, error: error.message }));
+    } else {
+      console.error(`\n✗ Cluster run failed: ${error.message}`);
+    }
+    await orchestrator.shutdown();
+    process.exit(1);
+  }
 }
 
 /**
@@ -1995,6 +2088,7 @@ Usage: npm run cli <command> [options]
 Commands:
   chat, repl             Interactive chat mode (REPL)
   run <prompt>           Execute a single task
+  cluster <prompt>       DeepSeek cluster agent execution
   status                 Show system status
   skills [list]          List available skills
   skills search <query>  Search skills by name or description
@@ -2031,6 +2125,8 @@ Commands:
 Examples:
   pnpm cli chat                 Start interactive mode
   pnpm cli run "创建一个RESTful API"
+  pnpm cli cluster "Fix failing tests" --mode agent
+  pnpm cli cluster "Add login API" --mode plan --dry-run
   pnpm cli status
   pnpm cli skills list
   pnpm cli skills search "code"
