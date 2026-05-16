@@ -33,15 +33,15 @@ function fileLines(path: string): number {
 const commits = sh("git log --oneline -5").trim();
 const unpushed = sh("git log --oneline origin/master..HEAD 2>/dev/null").trim();
 const changed = sh("git diff --stat HEAD 2>/dev/null").trim();
+const unpushedCount = unpushed ? unpushed.split("\n").filter(l => l.trim()).length : 0;
 
 // ═══ 2. Tests ═══
-const testOut = sh("pnpm test 2>&1");
+const testOutRaw = sh("pnpm test 2>&1");
+const testOut = testOutRaw.replace(/\x1B\[[0-9;]*m/g, ""); // strip ANSI
 const testMatch = testOut.match(/Tests\s+(\d+)\s+passed/);
 const testPassed = testMatch?.[1] || "?";
 const testFailedMatch = testOut.match(/Tests\s+.*?(\d+)\s+failed/);
 const testFailed = testFailedMatch?.[1] || "0";
-const testFilesMatch = testOut.match(/(\d+)\s+passed.*?\n/);
-const testFileCount_vi = (testFilesMatch?.[1]) || "?";
 
 // ═══ 3. Type-check ═══
 const tcOut = sh("pnpm type-check 2>&1");
@@ -123,11 +123,11 @@ console.log("══════════════════════�
 
 console.log("## VCS");
 console.log(`  Last commits:\n${commits.split("\n").map(l => "    " + l).join("\n")}`);
-console.log(`  Unpushed: ${unpushed ? unpushed.split("\n").length + " commits" : "none"}`);
+console.log(`  Unpushed: ${unpushedCount} commits`);
 console.log(`  Uncommitted: ${changed ? "YES" : "none"}\n`);
 
 console.log("## Health");
-console.log(`  Tests:       ${testPassed} passed / ${testFailed} failed  (${testFileCount} test files)`);
+console.log(`  Tests:       ${testPassed} passed / ${testFailed} failed  (${testFileCount} on disk)`);
 console.log(`  Type-check:  ${typeOk ? "✅ PASS" : "❌ FAIL"}`);
 
 // Estimate eval score from cached result
