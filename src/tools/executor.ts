@@ -27,7 +27,7 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /(?:token|secret|api[_-]?key)\s*[:=]\s*["']?[a-zA-Z0-9_\-\.]{16,}/gi, label: "[REDACTED_SECRET]" },
 ];
 
-function redactSecrets(output: string): string {
+export function redactSecrets(output: string): string {
   for (const { pattern, label } of SECRET_PATTERNS) {
     output = output.replace(pattern, label);
   }

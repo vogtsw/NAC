@@ -6,7 +6,7 @@
  */
 import { ContextBuilder, getDefaultSystemPrompt } from "./context.js";
 import { ToolRegistry, getToolRegistry } from "../tools/registry.js";
-import { ToolExecutor } from "../tools/executor.js";
+import { redactSecrets, ToolExecutor } from "../tools/executor.js";
 import { getBuiltinTools } from "../tools/builtin/index.js";
 import type { LLMAdapter } from "../llm/adapter.js";
 import { getDefaultAdapter } from "../llm/index.js";
@@ -326,8 +326,11 @@ export class AgentLoop {
       ? successfulTools.length / allToolResults.length
       : 1;
 
+    // Redact secrets from final response before returning to user
+    const safeResponse = redactSecrets(finalResponse);
+
     return {
-      turns, stopReason, finalResponse, totalDuration, totalTokens,
+      turns, stopReason, finalResponse: safeResponse, totalDuration, totalTokens,
       toolCallCount: allToolResults.length, toolSuccessRate,
     };
   }
