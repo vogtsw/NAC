@@ -77,6 +77,12 @@ export class ClusterDAGBuilder {
         requiredSkills: this.roleToSkills(step.agentRole),
         dependencies: step.dependencies,
         estimatedDuration: this.estimateDuration(step),
+        // DeepSeek-native: preserve model routing metadata
+        model: step.model,
+        thinking: step.thinking,
+        reasoningEffort: step.reasoningEffort,
+        inputArtifacts: step.inputArtifacts,
+        outputArtifact: step.outputArtifact,
         retryPolicy: step.agentRole === "reviewer" || step.agentRole === "tester"
           ? { maxAttempts: 2, timeout: 30000, strategy: "linear" as const }
           : undefined,

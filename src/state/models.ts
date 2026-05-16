@@ -35,6 +35,12 @@ export interface Task {
   maxRetries?: number;         // Maximum retry attempts
   retryCount?: number;         // Current retry attempt
   contract?: TaskContract;     // Engineering contract for DAG execution
+  // DeepSeek cluster: model routing preserved from ClusterDAGBuilder
+  model?: "deepseek-v4-pro" | "deepseek-v4-flash";
+  thinking?: "enabled" | "disabled";
+  reasoningEffort?: "high" | "max";
+  inputArtifacts?: string[];
+  outputArtifact?: string;
 }
 
 export interface DAGNode {
@@ -74,6 +80,9 @@ export interface AgentConfig {
   skills: string[];
   systemPrompt?: string;
   context?: Record<string, any>;
+  model?: "deepseek-v4-pro" | "deepseek-v4-flash";
+  thinking?: "enabled" | "disabled";
+  reasoningEffort?: "high" | "max";
 }
 
 export enum AgentStatus {

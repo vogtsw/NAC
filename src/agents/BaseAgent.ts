@@ -14,12 +14,19 @@ const logger = getLogger('BaseAgent');
 /**
  * Abstract base agent class
  */
+export interface ModelPolicy {
+  model?: "deepseek-v4-pro" | "deepseek-v4-flash";
+  thinking?: "enabled" | "disabled";
+  reasoningEffort?: "high" | "max";
+}
+
 export abstract class BaseAgent {
   protected logger: ReturnType<typeof childLogger>;
   protected status: AgentStatus = AgentStatus.IDLE;
   protected tasksCompleted: number = 0;
   protected totalExecutionTime: number = 0;
   protected promptBuilder: ReturnType<typeof getPromptBuilder>;
+  protected modelPolicy: ModelPolicy = {};
 
   // Cached system prompt
   private cachedSystemPrompt: string | null = null;
@@ -31,6 +38,15 @@ export abstract class BaseAgent {
   ) {
     this.logger = childLogger(logger, { agent: agentType });
     this.promptBuilder = getPromptBuilder();
+  }
+
+  /**
+   * Set per-task model policy from ClusterDAGBuilder routing.
+   * Called by AgentFactory after construction.
+   */
+  setModelPolicy(policy: ModelPolicy): void {
+    this.modelPolicy = policy;
+    this.logger.debug(policy, 'Model policy applied');
   }
 
   /**
@@ -64,9 +80,16 @@ export abstract class BaseAgent {
     // Get system prompt from MD file
     const systemPrompt = await this.getSystemPrompt();
 
+    // Merge per-task model policy from ClusterDAGBuilder
+    const modelOverrides: any = {};
+    if (this.modelPolicy.model) modelOverrides.model = this.modelPolicy.model;
+    if (this.modelPolicy.thinking) modelOverrides.thinking = this.modelPolicy.thinking;
+    if (this.modelPolicy.reasoningEffort) modelOverrides.reasoningEffort = this.modelPolicy.reasoningEffort;
+
     return await this.llm.complete(prompt, {
       systemPrompt,
-      ...options,
+      ...modelOverrides,
+      ...options, // task-level options override model policy
     });
   }
 

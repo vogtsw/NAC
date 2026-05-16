@@ -13,6 +13,7 @@ import { CoordinatorAgent } from './cluster/CoordinatorAgent.js';
 import { PlannerAgent } from './cluster/PlannerAgent.js';
 import { ResearchAgent } from './cluster/ResearchAgent.js';
 import { ReviewAgent } from './cluster/ReviewAgent.js';
+import { TestAgent } from './cluster/TestAgent.js';
 import { AgentConfig, AgentInfo, AgentStatus } from '../state/models.js';
 import { SkillManager, getSkillManager } from '../skills/SkillManager.js';
 import { getLogger } from '../monitoring/logger.js';
@@ -33,6 +34,7 @@ const AGENT_REGISTRY: Record<string, new (llm: any, skillManager: any) => BaseAg
   PlannerAgent,
   ResearchAgent,
   ReviewAgent,
+  TestAgent,
 };
 
 /**
@@ -58,6 +60,15 @@ export class AgentFactory {
     // Create agent with the actual LLM client
     const agent = new AgentClass(this.llm, this.skillManager);
 
+    // DeepSeek-native: apply per-task model policy from ClusterDAGBuilder
+    if (config.model || config.thinking || config.reasoningEffort) {
+      agent.setModelPolicy?.({
+        model: config.model,
+        thinking: config.thinking,
+        reasoningEffort: config.reasoningEffort,
+      });
+    }
+
     // Store agent
     this.activeAgents.set(config.taskId, agent);
 
@@ -65,6 +76,8 @@ export class AgentFactory {
     logger.debug({
       agentType,
       taskId: config.taskId,
+      model: config.model,
+      thinking: config.thinking,
       hasExecute: typeof agent.execute === 'function',
       hasGetStats: typeof agent.getStats === 'function',
       agentConstructor: agent.constructor.name,

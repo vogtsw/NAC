@@ -294,6 +294,10 @@ export class TaskExecutor {
     const agent = await context.agentFactory.create(task.agentType, {
       taskId: task.id,
       skills: task.requiredSkills || [],
+      // DeepSeek-native: per-task model routing from ClusterDAGBuilder
+      model: task.model,
+      thinking: task.thinking,
+      reasoningEffort: task.reasoningEffort,
     });
     return await agent.execute(task);
   }
