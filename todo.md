@@ -433,21 +433,27 @@ pnpm exec tsx scripts/cache-hit-bench.ts --gate
 
 ---
 
-## 进度：当前 179 tests passed / 0 failed | Eval 69.8% | Codex 产品就绪度 ~35% | Type-check ✅
+## 进度：当前 201 tests passed / 0 failed | Eval 69.8% (stale) | Codex 产品就绪度 ~45% (was 35%) | Type-check ✅
+
+**最新提交**: `b266364` — P0 安全和运行时加固（2026-05-17）
+- Mode gate 传播修复 ✅ | ApprovalManager ✅ | ClusterRunStore ✅ | AgentSessionManager ✅
+- CodeAgent 自动应用 ✅ | TestAgent 结构化报告 ✅ | ReviewAgent Blackboard 证据 ✅
+- Mode/approval/sandbox 测试：22 个新测试 ✅ | ModeToolGate 已跟踪 ✅
 
 ### 按优先级排序的待办
 
-| 优先级 | 任务 | 新建/已有 |
+| 优先级 | 任务 | 状态 |
 |---|---|---|
-| 🔴 P0 | P0.1 修复 mode gate 传播断裂（Scheduler→TaskExecutor） | 🆕 新发现 |
-| 🔴 P0 | P0.2 ClusterRunStore | 已有 |
-| 🔴 P0 | P0.3 AgentSessionManager | 已有 |
-| 🔴 P0 | P0.4 patch/test/review 真实闭环 | 已有 |
-| 🔴 P0 | P0.5 ApprovalManager + sandbox + worktree 链路 | 已有 |
-| 🟡 P1 | P1.1 cache-aware prompt builder | 已有 |
-| 🟡 P1 | P1.2 真实 API cluster benchmark | 已有 |
-| 🟡 P1 | P1.3 修复 --dry-run + ClusterReporter timeline | 🆕 新发现 |
-| 🟡 P1 | P1.4 Cluster agent 硬化（Coordinator/Planner/Review） | 🆕 新发现 |
-| 🟡 P1 | P1.5 提交 untracked 文件 + 重跑 benchmark | 🆕 新发现 |
-| 🟢 P2 | Worktree 隔离 + 持久化队列 | 已有 |
+| 🔴 P0 | P0.1 修复 mode gate 传播断裂（Scheduler→TaskExecutor） | ✅ 完成 |
+| 🟡 P1 | P0.1.5 ApprovalManager 创建 | ✅ 完成 |
+| 🔴 P0 | P0.2 ClusterRunStore | ✅ 完成 |
+| 🔴 P0 | P0.3 AgentSessionManager | ✅ 完成 |
+| 🔴 P0 | P0.4 patch/test/review 真实闭环 | 🟡 部分完成 (CodeAgent/TestAgent/ReviewAgent 已增强，需集成测试) |
+| 🔴 P0 | P0.5 ModeToolGate 提交 + 连接 | ✅ 完成 |
+| 🟡 P1 | P1.1 cache-aware prompt builder | ❌ 待做 |
+| 🟡 P1 | P1.2 真实 API cluster benchmark | ❌ 待做 |
+| 🟡 P1 | P1.3 修复 --dry-run + ClusterReporter timeline | ❌ 待做 |
+| 🟡 P1 | P1.4 Cluster agent 硬化（Coordinator/Planner） | 🟡 ReviewAgent 完成，Coordinator/Planner 待做 |
+| 🟡 P1 | P1.5 提交 untracked 文件 + 重跑 benchmark | ✅ untracked 已跟踪，benchmark 需重跑 |
+| 🟢 P2 | Worktree 隔离 + 持久化队列 | ❌ 待做 |
 
