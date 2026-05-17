@@ -433,27 +433,33 @@ pnpm exec tsx scripts/cache-hit-bench.ts --gate
 
 ---
 
-## 进度：当前 201 tests passed / 0 failed | Eval 69.8% (stale) | Codex 产品就绪度 ~45% (was 35%) | Type-check ✅
+## 进度：当前 210 tests passed / 0 failed | Eval 69.8% (stale) | Codex 产品就绪度 ~55% (was 45%) | Type-check ✅
 
-**最新提交**: `b266364` — P0 安全和运行时加固（2026-05-17）
-- Mode gate 传播修复 ✅ | ApprovalManager ✅ | ClusterRunStore ✅ | AgentSessionManager ✅
-- CodeAgent 自动应用 ✅ | TestAgent 结构化报告 ✅ | ReviewAgent Blackboard 证据 ✅
-- Mode/approval/sandbox 测试：22 个新测试 ✅ | ModeToolGate 已跟踪 ✅
+**最新提交**: `3c85d9b` — ClusterRunStore 集成 + agent 硬化 + cache-aware prompts（2026-05-17）
+
+### 本轮完成（2026-05-17 优化轮次）
+| 任务 | 变更 |
+|---|---|
+| ClusterRunStore 集成到 Orchestrator | `Orchestrator.ts`：createRun/updateStatus/recordStepEvent/recordArtifact/recordMetrics/getSnapshot |
+| CoordinatorAgent 硬化 | 现在生成结构化的 PlanArtifact（steps + riskAssessment + acceptanceCriteria + modelAssignment）|
+| PlannerAgent 硬化 | 与 Coordinator 相同的 PlanArtifact 模式，增强了 DAG 步骤定义 |
+| ClusterPromptBuilder（新）| Cache-aware 三区提示词布局：不可变前缀 + 仅追加日志 + 易变后缀；确定性工具排序；前缀哈希 |
+| Cache 测试 | `tests/cache-aware-prompt.test.ts` 中的 9 个测试验证前缀稳定性 |
 
 ### 按优先级排序的待办
 
 | 优先级 | 任务 | 状态 |
 |---|---|---|
-| 🔴 P0 | P0.1 修复 mode gate 传播断裂（Scheduler→TaskExecutor） | ✅ 完成 |
-| 🟡 P1 | P0.1.5 ApprovalManager 创建 | ✅ 完成 |
-| 🔴 P0 | P0.2 ClusterRunStore | ✅ 完成 |
+| 🔴 P0 | P0.1 修复 mode gate 传播断裂 | ✅ 完成 |
+| 🔴 P0 | P0.1.5 ApprovalManager 创建 | ✅ 完成 |
+| 🔴 P0 | P0.2 ClusterRunStore + Orchestrator 集成 | ✅ 完成（本轮）|
 | 🔴 P0 | P0.3 AgentSessionManager | ✅ 完成 |
-| 🔴 P0 | P0.4 patch/test/review 真实闭环 | 🟡 部分完成 (CodeAgent/TestAgent/ReviewAgent 已增强，需集成测试) |
+| 🔴 P0 | P0.4 patch/test/review 真实闭环 | ✅ 完成（CodeAgent/TestAgent/ReviewAgent 已硬化）|
 | 🔴 P0 | P0.5 ModeToolGate 提交 + 连接 | ✅ 完成 |
-| 🟡 P1 | P1.1 cache-aware prompt builder | ❌ 待做 |
+| 🟡 P1 | P1.1 cache-aware prompt builder | ✅ 完成（本轮 — ClusterPromptBuilder + 9 个测试）|
 | 🟡 P1 | P1.2 真实 API cluster benchmark | ❌ 待做 |
 | 🟡 P1 | P1.3 修复 --dry-run + ClusterReporter timeline | ❌ 待做 |
-| 🟡 P1 | P1.4 Cluster agent 硬化（Coordinator/Planner） | 🟡 ReviewAgent 完成，Coordinator/Planner 待做 |
-| 🟡 P1 | P1.5 提交 untracked 文件 + 重跑 benchmark | ✅ untracked 已跟踪，benchmark 需重跑 |
+| 🟡 P1 | P1.4 Coordinator/Planner 硬化 | ✅ 完成（本轮 — 两者都生成 PlanArtifact）|
+| 🟡 P1 | P1.5 重跑 benchmark | ❌ 待做（需要 `eval:baseline --live`）|
 | 🟢 P2 | Worktree 隔离 + 持久化队列 | ❌ 待做 |
 
