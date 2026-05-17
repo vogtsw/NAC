@@ -13,6 +13,7 @@ import { ClusterDAGBuilder } from './ClusterDAGBuilder.js';
 import { ClusterReporter, type ClusterReport } from './ClusterReporter.js';
 import type { ClusterArtifact } from './AgentHandoff.js';
 import { getBlackboard } from '../state/Blackboard.js';
+import { getClusterRunStore } from './ClusterRunStore.js';
 import { getEventBus, EventType } from '../state/EventBus.js';
 import { getSessionStore } from '../state/SessionStore.js';
 import { AgentFactory } from '../agents/AgentFactory.js';
@@ -287,6 +288,17 @@ export class Orchestrator {
         dag = this.clusterDAGBuilder.toExecutableDAG(clusterDag);
         logger.info({ steps: clusterDag.steps.length, maxParallelism: clusterDag.maxParallelism }, 'Cluster DAG built');
 
+        // Create persistent ClusterRun
+        const runStore = getClusterRunStore();
+        const clusterRun = runStore.createRun({
+          id: teamPlan.runId,
+          goal: searchIntent.primaryGoal,
+          mode: this.currentMode as 'plan' | 'agent' | 'yolo',
+          teamPlan,
+          dag: clusterDag,
+        });
+        runStore.updateRunStatus(teamPlan.runId, 'running');
+
         // Start the cluster reporter
         this.clusterReporter.start();
 
@@ -301,15 +313,33 @@ export class Orchestrator {
           toolGate: (toolName, mode, params) => this.isToolAllowed(toolName, mode, params),
         });
 
-        // Build and persist cluster artifacts to Blackboard
+        // Record step events, build and persist cluster artifacts to Blackboard
+        let totalTokens = 0;
+        let totalCacheHit = 0;
+        let totalCacheMiss = 0;
+        let totalToolCalls = 0;
+
         for (const [taskId, rawResult] of Object.entries(taskResults)) {
           const result = rawResult as any;
           const step = clusterDag.steps.find(s => s.id === taskId);
           if (step) {
+            const stepFailed = Boolean(result?.error || result?.validationPassed === false);
             const usage = result?.usage || result?.raw?.usage || result?.raw?.llm?.usage;
+
+            // Record step lifecycle events
+            runStore.recordStepEvent(teamPlan.runId, step.id,
+              stepFailed ? 'step_failed' : 'step_completed',
+              { duration: result?.duration, agentRole: step.agentRole });
+
             if (usage) {
               this.clusterReporter.recordTokenUsage(this.roleToAgentTypeForReport(step.agentRole), usage);
+              if (usage.promptTokens) totalTokens += usage.promptTokens;
+              if (usage.completionTokens) totalTokens += usage.completionTokens;
+              if (typeof usage.cacheHitTokens === 'number') totalCacheHit += usage.cacheHitTokens;
+              if (typeof usage.cacheMissTokens === 'number') totalCacheMiss += usage.cacheMissTokens;
             }
+            if (result?.toolCalls) totalToolCalls += result.toolCalls;
+
             const artifact: ClusterArtifact = {
               id: `${teamPlan.runId}_${taskId}`,
               runId: teamPlan.runId,
@@ -317,24 +347,38 @@ export class Orchestrator {
               producer: step.agentRole,
               consumers: clusterDag.steps.filter(s => s.dependencies.includes(taskId)).map(s => s.agentRole),
               content: result?.raw?.artifact || result?.raw?.result || result?.result || result,
-              confidence: (result as any)?.error ? 0.5 : 0.95,
+              confidence: stepFailed ? 0.5 : 0.95,
               model: result?.model || step.model,
               tokenCost: usage?.totalTokens || (result as any)?.cost || 0,
               createdAt: Date.now(),
             };
             clusterArtifacts.push(artifact);
-            // Persist to Blackboard so downstream steps can consume
             await this.blackboard.putArtifact(artifact);
+            runStore.recordArtifact(teamPlan.runId, artifact.id);
           }
         }
 
+        // Record actual metrics (never estimates)
+        runStore.recordMetrics(teamPlan.runId, {
+          wallClockMs: Date.now() - startTime,
+          toolCalls: totalToolCalls,
+          cacheHitTokens: totalCacheHit,
+          cacheMissTokens: totalCacheMiss,
+        });
+
+        const runSnapshot = runStore.getSnapshot(teamPlan.runId);
         clusterReport = this.clusterReporter.generateReport({
           runId: teamPlan.runId,
           teamPlan,
           clusterDag,
           artifacts: clusterArtifacts,
           status: clusterArtifacts.some(a => a.confidence < 0.8) ? 'partial' : 'completed',
+          ...(runSnapshot?.metrics ? { metrics: runSnapshot.metrics } : {}),
         });
+
+        // Finalize run
+        runStore.updateRunStatus(teamPlan.runId,
+          clusterReport.status === 'completed' ? 'completed' : 'failed');
 
         const result = this.formatClusterResult(teamPlan, taskResults, clusterReport, clusterArtifacts);
         await this.sessionStore.addMessage(sessionId, 'assistant', `[Cluster] ${teamPlan.collaborationMode} run complete`);
@@ -343,7 +387,7 @@ export class Orchestrator {
         const executionTime = Date.now() - startTime;
         await this.eventBus.publish(EventType.SESSION_COMPLETED, { sessionId, result });
 
-        logger.info({ sessionId, executionTime, clusterMode: true }, 'Cluster request processed');
+        logger.info({ sessionId, executionTime, clusterMode: true, runId: teamPlan.runId }, 'Cluster request processed');
         return result;
       }
 
