@@ -6,6 +6,7 @@
 
 import { Permission, SkillPermissions } from '../state/models.js';
 import { getLogger } from '../monitoring/logger.js';
+import { resolve } from 'path';
 
 const logger = getLogger('SkillPermissionManager');
 
@@ -213,8 +214,9 @@ export class SkillPermissionManager {
     // Check path restrictions
     if (limits.allowedPaths && limits.allowedPaths.length > 0) {
       if (params.path) {
+        const requestedPath = resolve(String(params.path));
         const allowed = limits.allowedPaths.some(allowedPath =>
-          params.path.startsWith(allowedPath)
+          requestedPath.startsWith(resolve(allowedPath))
         );
 
         if (!allowed) {

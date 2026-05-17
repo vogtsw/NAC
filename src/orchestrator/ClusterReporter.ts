@@ -69,7 +69,19 @@ export class ClusterReporter {
   }
 
   recordTokenUsage(agentType: string, usage: DeepSeekTokenUsage): void {
-    this.tokenUsage.set(agentType, usage);
+    const current = this.tokenUsage.get(agentType);
+    if (!current) {
+      this.tokenUsage.set(agentType, usage);
+      return;
+    }
+    this.tokenUsage.set(agentType, {
+      promptTokens: current.promptTokens + usage.promptTokens,
+      completionTokens: current.completionTokens + usage.completionTokens,
+      totalTokens: current.totalTokens + usage.totalTokens,
+      reasoningTokens: (current.reasoningTokens || 0) + (usage.reasoningTokens || 0),
+      cacheHitTokens: (current.cacheHitTokens || 0) + (usage.cacheHitTokens || 0),
+      cacheMissTokens: (current.cacheMissTokens || 0) + (usage.cacheMissTokens || 0),
+    });
   }
 
   /**
@@ -150,9 +162,8 @@ export class ClusterReporter {
       const memberSteps = clusterDag.steps.filter(s =>
         s.agentRole === member.role
       );
-      const totalMemberTokens = member.model === "deepseek-v4-pro"
-        ? memberSteps.length * 2000
-        : memberSteps.length * 1000;
+      const actualUsage = this.tokenUsage.get(member.agentType);
+      const totalMemberTokens = actualUsage?.totalTokens || 0;
 
       return {
         agentType: member.agentType,

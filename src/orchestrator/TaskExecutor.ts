@@ -25,6 +25,11 @@ export interface TaskExecutorContext {
   agentFactory: AgentFactory;
   sessionId: string;
   userIntent?: string;
+  mode?: 'plan' | 'agent' | 'yolo';
+  toolGate?: (toolName: string, mode?: string, params?: Record<string, unknown>) => {
+    allowed: boolean;
+    reason?: string;
+  };
 }
 
 export interface TaskExecutionResult {
@@ -298,8 +303,28 @@ export class TaskExecutor {
       model: task.model,
       thinking: task.thinking,
       reasoningEffort: task.reasoningEffort,
+      mode: task.mode || context.mode,
+      toolGate: context.toolGate,
     });
-    return await agent.execute(task);
+    const rawResult = await agent.execute(task);
+    const llmMetadata = agent.getLastLLMMetadata?.();
+    if (!llmMetadata) return rawResult;
+
+    if (rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult)) {
+      return {
+        ...rawResult,
+        usage: rawResult.usage || llmMetadata.usage,
+        model: rawResult.model || llmMetadata.model,
+        llm: rawResult.llm || llmMetadata,
+      };
+    }
+
+    return {
+      result: rawResult,
+      usage: llmMetadata.usage,
+      model: llmMetadata.model,
+      llm: llmMetadata,
+    };
   }
 
   private extractOutputText(result: any): string {

@@ -41,6 +41,10 @@ export interface Task {
   reasoningEffort?: "high" | "max";
   inputArtifacts?: string[];
   outputArtifact?: string;
+  target?: string;
+  testCommand?: string;
+  testPattern?: string;
+  mode?: 'plan' | 'agent' | 'yolo';
 }
 
 export interface DAGNode {
@@ -83,6 +87,11 @@ export interface AgentConfig {
   model?: "deepseek-v4-pro" | "deepseek-v4-flash";
   thinking?: "enabled" | "disabled";
   reasoningEffort?: "high" | "max";
+  mode?: 'plan' | 'agent' | 'yolo';
+  toolGate?: (toolName: string, mode?: string, params?: Record<string, unknown>) => {
+    allowed: boolean;
+    reason?: string;
+  };
 }
 
 export enum AgentStatus {

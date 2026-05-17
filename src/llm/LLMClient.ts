@@ -152,7 +152,7 @@ export class LLMClient {
       const reasoningContent = this.extractReasoningContent(response);
       const usage = this.extractUsage(response);
       const finishReason = this.extractFinishReason(response);
-      const model = this.extractModel(response);
+      const model = this.extractModel(response, effectiveModel);
 
       logger.debug({ responseLength: content.length, reasoningLength: reasoningContent?.length || 0,
         usage }, 'Received completion response');
@@ -291,8 +291,8 @@ export class LLMClient {
   /**
    * Extract model name from response.
    */
-  private extractModel(response: any): string {
-    return response.model || this.model;
+  private extractModel(response: any, fallbackModel: string = this.model): string {
+    return response.model || fallbackModel;
   }
 
   /**

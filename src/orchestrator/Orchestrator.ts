@@ -23,6 +23,7 @@ import { getLogger } from '../monitoring/logger.js';
 import { getOrLoadUserProfile } from '../state/UserProfile.js';
 import { getTaskScheduler } from '../scheduler/Scheduler.js';
 import { getFeedbackCollector } from '../evolution/FeedbackCollector.js';
+import { checkModeToolAccess } from '../security/ModeToolGate.js';
 
 const logger = getLogger('Orchestrator');
 
@@ -126,37 +127,8 @@ export class Orchestrator {
   /**
    * Centralized tool permission gate per mode (goal.md security model).
    */
-  isToolAllowed(toolName: string, mode?: string): { allowed: boolean; reason?: string } {
-    const m = mode || this.currentMode;
-    // Write tools
-    const writeTools = ["file_write", "edit_file", "apply_patch", "file-ops"];
-    // Destructive tools
-    const destructiveTools = ["bash", "run_command", "terminal-exec"];
-    // Git write tools
-    const gitWriteTools = ["git_commit", "git_push"];
-    // Network tools
-    const networkTools = ["web_search", "web_fetch", "mcp_call_tool", "npm_install", "pip_install"];
-
-    if (m === "plan") {
-      if (writeTools.includes(toolName)) return { allowed: false, reason: "Plan mode: write tools are disabled" };
-      if (destructiveTools.includes(toolName)) return { allowed: false, reason: "Plan mode: shell is read-only diagnostics only" };
-      if (gitWriteTools.includes(toolName)) return { allowed: false, reason: "Plan mode: git write operations are disabled" };
-      if (networkTools.includes(toolName)) return { allowed: false, reason: "Plan mode: network access is disabled" };
-      return { allowed: true };
-    }
-
-    if (m === "agent") {
-      if (gitWriteTools.includes(toolName)) return { allowed: false, reason: "Agent mode: git push requires explicit approval" };
-      if (networkTools.includes(toolName)) return { allowed: false, reason: "Agent mode: network tools require explicit approval" };
-      return { allowed: true }; // Other writes/shell require approval (handled at tool level)
-    }
-
-    if (m === "yolo") {
-      if (toolName === "git_push") return { allowed: false, reason: "YOLO mode: git push still requires explicit approval" };
-      return { allowed: true };
-    }
-
-    return { allowed: true };
+  isToolAllowed(toolName: string, mode?: string, params?: Record<string, unknown>): { allowed: boolean; reason?: string } {
+    return checkModeToolAccess(toolName, mode || this.currentMode, params);
   }
 
   async processRequest(request: ProcessRequest): Promise<any> {
@@ -322,9 +294,11 @@ export class Orchestrator {
         const clusterSessionId = teamPlan.runId || sessionId;
         await this.blackboard.createSession(clusterSessionId, { intent: searchIntent, dag, teamPlan, clusterDag });
 
-        const taskResults = await this.scheduler.schedule(sessionId, dag, {
+        const taskResults = await this.scheduler.schedule(clusterSessionId, dag, {
           agentFactory: this.agentFactory,
-          sessionId,
+          sessionId: clusterSessionId,
+          mode: this.currentMode as any,
+          toolGate: (toolName, mode, params) => this.isToolAllowed(toolName, mode, params),
         });
 
         // Build and persist cluster artifacts to Blackboard
@@ -332,16 +306,20 @@ export class Orchestrator {
           const result = rawResult as any;
           const step = clusterDag.steps.find(s => s.id === taskId);
           if (step) {
+            const usage = result?.usage || result?.raw?.usage || result?.raw?.llm?.usage;
+            if (usage) {
+              this.clusterReporter.recordTokenUsage(this.roleToAgentTypeForReport(step.agentRole), usage);
+            }
             const artifact: ClusterArtifact = {
               id: `${teamPlan.runId}_${taskId}`,
               runId: teamPlan.runId,
               type: step.outputArtifact,
               producer: step.agentRole,
               consumers: clusterDag.steps.filter(s => s.dependencies.includes(taskId)).map(s => s.agentRole),
-              content: result,
+              content: result?.raw?.artifact || result?.raw?.result || result?.result || result,
               confidence: (result as any)?.error ? 0.5 : 0.95,
-              model: step.model,
-              tokenCost: (result as any)?.cost || 0,
+              model: result?.model || step.model,
+              tokenCost: usage?.totalTokens || (result as any)?.cost || 0,
               createdAt: Date.now(),
             };
             clusterArtifacts.push(artifact);
@@ -380,6 +358,8 @@ export class Orchestrator {
       const taskResults = await this.scheduler.schedule(sessionId, dag, {
         agentFactory: this.agentFactory,
         sessionId,
+        mode: this.currentMode as any,
+        toolGate: (toolName, mode, params) => this.isToolAllowed(toolName, mode, params),
       });
 
       // 7. Format result for CLI/API response
@@ -719,6 +699,18 @@ export class Orchestrator {
       return Object.values(tasks);
     }
     return [];
+  }
+
+  private roleToAgentTypeForReport(role: string): string {
+    const mapping: Record<string, string> = {
+      planner: "PlannerAgent",
+      coordinator: "CoordinatorAgent",
+      researcher: "ResearchAgent",
+      code_agent: "CodeAgent",
+      tester: "TestAgent",
+      reviewer: "ReviewAgent",
+    };
+    return mapping[role] || role;
   }
 
   private extractTaskResponseText(agentResult: any): string {

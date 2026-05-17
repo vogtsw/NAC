@@ -23,6 +23,8 @@ export interface ClusterStep {
   model: "deepseek-v4-pro" | "deepseek-v4-flash";
   thinking: "enabled" | "disabled";
   reasoningEffort?: "high" | "max";
+  target?: string;
+  testCommand?: string;
 }
 
 export interface ClusterDAG {
@@ -83,6 +85,8 @@ export class ClusterDAGBuilder {
         reasoningEffort: step.reasoningEffort,
         inputArtifacts: step.inputArtifacts,
         outputArtifact: step.outputArtifact,
+        target: step.target,
+        testCommand: step.testCommand,
         retryPolicy: step.agentRole === "reviewer" || step.agentRole === "tester"
           ? { maxAttempts: 2, timeout: 30000, strategy: "linear" as const }
           : undefined,
@@ -139,6 +143,7 @@ export class ClusterDAGBuilder {
           canParallelize: true,
           model: "deepseek-v4-flash",
           thinking: "disabled",
+          target: partitions[i],
         });
       }
 
@@ -190,6 +195,7 @@ export class ClusterDAGBuilder {
         model: "deepseek-v4-flash",
         thinking: "enabled",
         reasoningEffort: "high",
+        testCommand: process.env.NAC_TEST_COMMAND,
       });
       prevStepId = "step_test";
 
@@ -232,6 +238,7 @@ export class ClusterDAGBuilder {
           model: "deepseek-v4-flash",
           thinking: "enabled",
           reasoningEffort: "high",
+          testCommand: process.env.NAC_TEST_COMMAND,
         });
 
         prevStepId = "step_test_v2";

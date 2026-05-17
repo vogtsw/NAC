@@ -3,11 +3,12 @@
  * Abstract base class for all agent types
  */
 
-import { LLMClient } from '../llm/LLMClient.js';
+import { CompleteResult, LLMClient } from '../llm/LLMClient.js';
 import { SkillManager } from '../skills/SkillManager.js';
 import { AgentStatus, ExecutionContext, SkillResult } from '../state/models.js';
 import { getLogger, childLogger } from '../monitoring/logger.js';
 import { getPromptBuilder } from '../llm/PromptBuilder.js';
+import type { ModeToolDecision } from '../security/ModeToolGate.js';
 
 const logger = getLogger('BaseAgent');
 
@@ -27,6 +28,9 @@ export abstract class BaseAgent {
   protected totalExecutionTime: number = 0;
   protected promptBuilder: ReturnType<typeof getPromptBuilder>;
   protected modelPolicy: ModelPolicy = {};
+  protected runtimeMode: 'plan' | 'agent' | 'yolo' = 'agent';
+  protected toolGate?: (toolName: string, mode?: string, params?: Record<string, unknown>) => ModeToolDecision;
+  protected lastLLMMetadata?: CompleteResult;
 
   // Cached system prompt
   private cachedSystemPrompt: string | null = null;
@@ -49,6 +53,18 @@ export abstract class BaseAgent {
     this.logger.debug(policy, 'Model policy applied');
   }
 
+  setRuntimeContext(context: {
+    mode?: 'plan' | 'agent' | 'yolo';
+    toolGate?: (toolName: string, mode?: string, params?: Record<string, unknown>) => ModeToolDecision;
+  }): void {
+    if (context.mode) this.runtimeMode = context.mode;
+    if (context.toolGate) this.toolGate = context.toolGate;
+  }
+
+  getLastLLMMetadata(): CompleteResult | undefined {
+    return this.lastLLMMetadata;
+  }
+
   /**
    * Execute a task (must be implemented by subclasses)
    */
@@ -60,7 +76,21 @@ export abstract class BaseAgent {
   protected async useSkill(skillName: string, params: any, context?: ExecutionContext): Promise<SkillResult> {
     this.logger.debug({ skill: skillName, params }, 'Using skill');
 
-    const result = await this.skillManager.executeSkill(skillName, params, context);
+    const gate = this.toolGate?.(skillName, this.runtimeMode, params);
+    if (gate && !gate.allowed) {
+      this.logger.warn({ skill: skillName, mode: this.runtimeMode, reason: gate.reason }, 'Skill blocked by runtime mode gate');
+      return {
+        success: false,
+        error: `Mode gate denied ${skillName}: ${gate.reason || 'not allowed'}`,
+        metadata: { mode: this.runtimeMode, deniedBy: 'ModeToolGate' },
+      };
+    }
+
+    const result = await this.skillManager.executeSkill(skillName, params, {
+      ...(context || {}),
+      agentType: this.agentType,
+      mode: this.runtimeMode,
+    } as any);
 
     if (!result.success) {
       this.logger.warn({ skill: skillName, error: result.error }, 'Skill execution failed');
@@ -86,11 +116,13 @@ export abstract class BaseAgent {
     if (this.modelPolicy.thinking) modelOverrides.thinking = this.modelPolicy.thinking;
     if (this.modelPolicy.reasoningEffort) modelOverrides.reasoningEffort = this.modelPolicy.reasoningEffort;
 
-    return await this.llm.complete(prompt, {
+    const result = await this.completeWithOptionalMeta(prompt, {
       systemPrompt,
       ...modelOverrides,
       ...options, // task-level options override model policy
     });
+    this.lastLLMMetadata = result;
+    return result.content;
   }
 
   /**
@@ -132,10 +164,12 @@ export abstract class BaseAgent {
     // Get system prompt separately for the LLM call
     const systemPrompt = await this.getSystemPrompt();
 
-    const response = await this.llm.complete(fullContext, {
+    const result = await this.completeWithOptionalMeta(fullContext, {
       systemPrompt,
       ...llmOptions,
     });
+    this.lastLLMMetadata = result;
+    const response = result.content;
 
     // Post-process: check if response contains file operations
     const fileOpResult = await this.processFileOperations(response);
@@ -146,6 +180,27 @@ export abstract class BaseAgent {
   private shouldUseDeterministicFallback(): boolean {
     const isTestRuntime = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
     return isTestRuntime && process.env.USE_LIVE_LLM_FOR_TESTS !== 'true';
+  }
+
+  private async completeWithOptionalMeta(prompt: string, options: any): Promise<CompleteResult> {
+    const llm = this.llm as any;
+    if (typeof llm.completeWithMeta === 'function') {
+      return await llm.completeWithMeta(prompt, options);
+    }
+
+    const content = await llm.complete(prompt, options);
+    return {
+      content,
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
+      },
+      finishReason: 'unknown',
+      model: options?.model || 'unknown',
+    };
   }
 
   private createDeterministicResponse(input: string): string {

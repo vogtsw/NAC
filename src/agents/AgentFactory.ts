@@ -69,6 +69,11 @@ export class AgentFactory {
       });
     }
 
+    agent.setRuntimeContext?.({
+      mode: config.mode,
+      toolGate: config.toolGate,
+    });
+
     // Store agent
     this.activeAgents.set(config.taskId, agent);
 

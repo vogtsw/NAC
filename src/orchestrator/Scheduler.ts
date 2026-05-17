@@ -29,6 +29,11 @@ export function fixUnicodeDisplay(text: string): string {
 export interface SchedulerContext {
   agentFactory: AgentFactory;
   sessionId: string;
+  mode?: 'plan' | 'agent' | 'yolo';
+  toolGate?: (toolName: string, mode?: string, params?: Record<string, unknown>) => {
+    allowed: boolean;
+    reason?: string;
+  };
 }
 
 /**
@@ -203,6 +208,8 @@ export class Scheduler {
           agentFactory: context.agentFactory,
           sessionId,
           userIntent: task.description || task.name,
+          mode: context.mode,
+          toolGate: context.toolGate,
         });
 
         logger.info(
@@ -215,7 +222,16 @@ export class Scheduler {
           'Task completed'
         );
 
-        return { taskId, result: execution.result, duration: execution.duration };
+        return {
+          taskId,
+          result: execution.result,
+          raw: execution.raw,
+          duration: execution.duration,
+          validationPassed: execution.validationPassed,
+          validationScore: execution.validationScore,
+          usage: execution.raw?.usage || execution.raw?.llm?.usage,
+          model: execution.raw?.model || execution.raw?.llm?.model,
+        };
       } catch (error: any) {
         logger.error({ taskId, error: error.message }, 'Task failed');
 
@@ -296,4 +312,3 @@ export class Scheduler {
     };
   }
 }
-
